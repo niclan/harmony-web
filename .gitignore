@@ -11,3 +11,13 @@ dist/
 build/
 .env
 .venv
+
+# Emacs
+*~
+\#*\#
+.\#*
+.emacs.desktop
+.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
