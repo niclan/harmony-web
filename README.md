@@ -5,6 +5,7 @@ A Python Flask web application that provides a web interface and REST API for co
 ## Features
 
 - Web interface to view and start Harmony Hub activities
+- Activity images cached from Harmony Hub CDN with type-based fallback icons
 - Transport controls (play/pause/stop) for media activities
 - Volume control (up/down/mute) when an activity is active
 - Intelligent button enabling based on activity capabilities

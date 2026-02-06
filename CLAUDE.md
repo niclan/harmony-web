@@ -61,6 +61,18 @@ pip install -r requirements.txt
   - Falls back to `PlayMediaActivityRole` if PassThroughActivityRole not present
   - This mapping ensures commands go to the correct device (e.g., play/pause to Squeezebox, volume to amplifier)
 
+- **Activity Image Caching**: Downloads activity images from Harmony Hub CDN and caches locally (app.py:86-123)
+  - Images downloaded from `baseImageUri + imageKey` fields in activity config
+  - Cached in `static/images/activities/` directory (gitignored except .gitkeep)
+  - Cache-forever strategy: images never expire once downloaded
+  - Type-based fallback icons used when no image available:
+    - 🎵 (VirtualCdMulti - audio/music activities)
+    - 📀 (VirtualDvd - video/DVD activities)
+    - 📺 (VirtualTelevisionN - TV activities)
+    - ⏻ (PowerOff - power off state)
+    - ⚡ (default/generic activities)
+  - `/api/activities` endpoint includes `cachedImageUrl` field with local path
+
 - **Logging**: Comprehensive debug logging throughout
   - Application logs at DEBUG level
   - aioharmony library logs at DEBUG level
@@ -70,7 +82,9 @@ pip install -r requirements.txt
 - Vanilla JavaScript (no frameworks)
 - Auto-refreshes current activity every 5 seconds
 - Smart UI updates that avoid flickering by checking state changes before DOM manipulation
+- Activity cards display 80x80px images or type-based fallback icons
 - Transport buttons auto-enable/disable based on PassThroughActivityRole availability
+- Button click feedback with processing state (scale/opacity animations)
 - Responsive grid layout for activities
 - Inline CSS and JS (no external dependencies)
 
