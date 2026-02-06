@@ -2,6 +2,8 @@
 
 This directory contains configuration files for deploying Harmony Hub Web Controller on a server with nginx and systemd.
 
+The application runs using **gunicorn** (a production-grade WSGI server) behind nginx as a reverse proxy.
+
 ## Prerequisites
 
 - Ubuntu/Debian Linux server
@@ -71,6 +73,28 @@ sudo systemctl reload nginx
 ## Verification
 
 Access the application at: `http://your-server/harmony`
+
+## Gunicorn Configuration
+
+The systemd service runs gunicorn with the following configuration:
+
+- **Workers:** 2 (adjust based on CPU cores, formula: `2 * cores + 1`)
+- **Threads:** 4 per worker (handles async I/O to Harmony Hub efficiently)
+- **Bind:** 127.0.0.1:5000 (localhost only, nginx proxies external requests)
+- **Timeout:** 60 seconds (allows time for Harmony Hub responses)
+
+To adjust workers/threads, edit `/etc/systemd/system/harmony-web.service`:
+
+```bash
+# For a 4-core server, use 9 workers
+ExecStart=/opt/harmony-web/venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 9 --threads 4 ...
+```
+
+After changes:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart harmony-web
+```
 
 ## Monitoring
 

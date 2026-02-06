@@ -43,7 +43,7 @@ docker run -d -p 5000:5000 -e HARMONY_IP="192.168.1.123" harmony-controller
 # Install dependencies
 pip install -r requirements.txt
 
-# Dependencies: Flask 3.1.2, aioharmony 0.5.3, requests 2.32.5
+# Dependencies: Flask 3.1.2, aioharmony 0.5.3, requests 2.32.5, gunicorn 21.2.0
 ```
 
 ## Architecture
@@ -150,7 +150,9 @@ All routes are registered via Flask Blueprint with configurable `url_prefix`. Th
 **Production Deployment:**
 - Keep `FLASK_DEBUG=False` (default) to disable debug mode
 - See `deployment/` directory for nginx config and systemd service files
-- Runs as systemd service behind nginx reverse proxy
+- Runs via gunicorn WSGI server (not Flask's built-in server)
+- systemd service manages gunicorn process
+- nginx reverse proxies external requests to gunicorn
 
 ### Harmony Hub Communication
 

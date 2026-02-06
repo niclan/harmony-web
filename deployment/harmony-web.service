@@ -3,14 +3,14 @@ Description=Harmony Hub Web Controller
 After=network.target
 
 [Service]
-Type=simple
+Type=notify
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/harmony-web
 Environment="HARMONY_IP=192.168.1.123"
 Environment="URL_PREFIX=/harmony"
 Environment="FLASK_DEBUG=False"
-ExecStart=/opt/harmony-web/venv/bin/python /opt/harmony-web/app.py
+ExecStart=/opt/harmony-web/venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 2 --threads 4 --timeout 60 --access-logfile - --error-logfile - wsgi:app
 Restart=always
 RestartSec=10
 
