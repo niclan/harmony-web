@@ -37,6 +37,13 @@ python app.py
 
 Visit http://localhost:5000 to access the web interface.
 
+### Running Tests
+
+```bash
+# Run unit tests
+python -m unittest discover tests -v
+```
+
 ### Using Docker
 
 ```bash

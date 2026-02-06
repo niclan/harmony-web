@@ -14,10 +14,13 @@ Logitech Harmony Hub Web Controller - A Python Flask web application that provid
 # Activate virtual environment first
 source venv/bin/activate
 
-# Direct Python execution (development mode with auto-reload)
+# Direct Python execution
 python app.py
 
-# The app runs on http://0.0.0.0:5000 with debug=True enabled
+# For debug mode with auto-reload, set FLASK_DEBUG
+FLASK_DEBUG=true python app.py
+
+# The app runs on http://0.0.0.0:5000
 ```
 
 ### Docker
@@ -50,31 +53,33 @@ pip install -r requirements.txt
 **app.py** - Main Flask application with the following architecture:
 
 - **Async-Sync Bridge Pattern**: Flask (synchronous) wraps aioharmony (asynchronous) using `run_async()` helper
-  - Maintains a persistent event loop in a background thread (app.py:36-42)
-  - Uses `asyncio.run_coroutine_threadsafe()` to execute async operations from sync Flask handlers (app.py:45-61)
-  - Single global `harmony_client` instance maintained via `get_harmony_client()` (app.py:64-83)
+  - Maintains a persistent event loop in a background thread
+  - Uses `threading.Event` to ensure loop is ready before executing coroutines (eliminates race conditions)
+  - Uses `asyncio.run_coroutine_threadsafe()` to execute async operations from sync Flask handlers
+  - Single global `harmony_client` instance maintained via `get_harmony_client()`
   - Connection is persistent and reused across all requests
+  - **Connection Resilience**: Automatically detects and reconnects if Harmony Hub connection is lost
 
 - **Control Device Resolution**: Uses Harmony Hub's activity role fields to determine which device receives commands:
-  - `VolumeActivityRole`: Device for volume commands (amplifier/receiver) - app.py:221
-  - `PassThroughActivityRole`: Device for transport commands (media player) - app.py:342-344
+  - `VolumeActivityRole`: Device for volume commands (amplifier/receiver)
+  - `PassThroughActivityRole`: Device for transport commands (separate media player)
   - Falls back to `PlayMediaActivityRole` if PassThroughActivityRole not present
   - This mapping ensures commands go to the correct device (e.g., play/pause to Squeezebox, volume to amplifier)
 
-- **Activity Image Caching**: Downloads activity images from Harmony Hub CDN and caches locally (app.py:97-148)
+- **Activity Image Caching**: Downloads activity images from Harmony Hub CDN and caches locally
   - Images downloaded from `baseImageUri + imageKey` fields in activity config
-  - **Security**: Domain whitelist restricts downloads to trusted Logitech/Harmony CDN domains only (app.py:33-37)
+  - **Security**: Domain whitelist restricts downloads to trusted Logitech/Harmony CDN domains only
     - Allowed domains: `rcbu-prod-ssl-amr.myharmony.com`, `home.myharmony.com`, `svcs.myharmony.com`
     - Rejects and logs attempts to download from untrusted domains
   - Cached in `static/images/activities/` directory (gitignored except .gitkeep)
   - Cache-forever strategy: images never expire once downloaded
-  - Type-based fallback icons used when no image available:
-    - 🎵 (VirtualCdMulti - audio/music activities)
-    - 📀 (VirtualDvd - video/DVD activities)
-    - 📺 (VirtualTelevisionN - TV activities)
-    - ⏻ (PowerOff - power off state)
-    - ⚡ (default/generic activities)
+  - Type-based fallback emoji icons used when no image available (music, video, TV, power, generic)
   - `/api/activities` endpoint includes `cachedImageUrl` field with local path
+
+- **Input Validation**: Activity IDs validated against Harmony Hub config before execution
+  - `/api/start_activity` validates activity_id exists in config
+  - Returns 400 Bad Request for invalid activity IDs
+  - Prevents commands to non-existent activities
 
 - **Logging**: Comprehensive debug logging throughout
   - Application logs at DEBUG level
@@ -84,16 +89,16 @@ pip install -r requirements.txt
 **templates/index.html** - Single-page web UI:
 - Vanilla JavaScript (no frameworks)
 - **UI Design**:
-  - Black background (#000000) for high contrast
+  - Black background for high contrast
   - White cards with rounded corners for all content sections
-  - Power button in header (left side, 60px wide, 20px emoji icon)
-  - Always-visible control buttons (grayed out to 40% opacity when inactive)
-  - 6 control buttons in single row: Play, Pause, Stop, Volume Up, Volume Down, Mute
-  - Square-shaped control buttons (80px min-height) with 28px emoji icons above text
+  - Power button in header on left side with emoji icon
+  - Always-visible control buttons (grayed out when inactive)
+  - Six control buttons in single row: Play, Pause, Stop, Volume Up, Volume Down, Mute
+  - Square-shaped control buttons with large emoji icons above text
   - Color-coded controls: green (transport), purple (volume), red (power)
 - **Activity Indication**:
-  - Active activity card has prominent 4px green border (#28a745)
-  - Activity cards display 80x80px images or type-based fallback icons
+  - Active activity card has prominent green border
+  - Activity cards display images or type-based fallback emoji icons
   - No Active/Inactive text labels (visual border is sufficient)
 - **Behavior**:
   - Auto-refreshes current activity every 5 seconds
@@ -101,10 +106,10 @@ pip install -r requirements.txt
   - Transport buttons auto-enable/disable based on PassThroughActivityRole availability
   - Volume and power buttons disabled when no activity is active
   - Button click feedback with processing state (scale/opacity animations)
-  - 3-second grace period after activity changes to prevent auto-refresh interference
+  - Grace period after activity changes to prevent auto-refresh interference
 - **Layout**:
-  - Responsive grid layout for activities (auto-fill, 250px min column width)
-  - Single-row grid layout for control buttons (6 columns)
+  - Responsive grid layout for activities (auto-fill based on screen width)
+  - Single-row grid layout for control buttons
   - Flexbox header with power button and centered title
 - Inline CSS and JS (no external dependencies)
 
@@ -118,19 +123,22 @@ All endpoints return JSON with `{'error': str}` on failure or appropriate succes
 - `POST /api/power_off` - Turn off all activities (activity ID -1)
 - `GET /api/transport_controls` - Check if current activity supports transport controls (checks for PassThroughActivityRole or PlayMediaActivityRole)
 - `POST /api/transport` - Transport control (requires `{"action": "play"|"pause"|"stop"}`)
-  - Uses PassThroughActivityRole first, falls back to PlayMediaActivityRole (app.py:342-344)
+  - Uses PassThroughActivityRole first, falls back to PlayMediaActivityRole
   - Sends standard command names (Play, Pause, Stop) to the appropriate device
 - `POST /api/volume` - Volume control (requires `{"action": "up"|"down"|"mute"}`)
-  - Uses VolumeActivityRole to find correct device (app.py:221)
+  - Uses VolumeActivityRole to find correct device
   - Returns 404 if no volume device found for activity
 - `GET /api/devices` - List all devices from hub config
 
 ### Configuration
 
-Environment variable:
+Environment variables:
 - `HARMONY_IP` - Harmony Hub IP address (default: "192.168.1.123")
+- `FLASK_DEBUG` - Enable Flask debug mode (default: "False", accepts: "true", "1", "yes")
 
 Set via export, .env file, or Docker environment.
+
+**Production Deployment:** Keep `FLASK_DEBUG=False` (default) to disable debug mode and Flask debugger.
 
 ### Harmony Hub Communication
 
@@ -194,14 +202,31 @@ All API routes:
 ### Known Implementation Details
 
 - The async-sync bridge uses a background thread with a persistent event loop to avoid connection instability
-- UI implements a 3-second "grace period" after activity changes where auto-refresh is paused to prevent flickering (templates/index.html)
+- UI implements a grace period after activity changes where auto-refresh is paused to prevent flickering
 - Transport button availability is determined by presence of PassThroughActivityRole OR PlayMediaActivityRole, not by checking controlGroups
 - Volume and transport controls both validate that an activity is running (not PowerOff state with ID "-1")
 
 ## Testing
 
-No test framework is currently configured. When adding tests, consider:
-- Mocking `HarmonyAPI` client for unit tests
-- Testing the async-sync bridge behavior
-- Testing error handling for connection failures
-- Testing role-based device resolution logic
+**Test Framework:** Python's built-in `unittest` module
+
+**Running Tests:**
+```bash
+python -m unittest discover tests -v
+```
+
+**Test Coverage:**
+- Flask route endpoints (index, activities, current_activity, start_activity, power_off)
+- Image caching functionality with domain validation
+- Input validation for activity IDs
+- Error handling for invalid requests
+
+**Test Files:**
+- `tests/test_app.py` - Main application tests
+
+**Key Test Areas:**
+- Mocked `HarmonyAPI` client for isolated testing
+- Activity ID validation against config
+- Domain whitelist enforcement for image downloads
+- Error responses for invalid input
+- Successful API responses with mocked data

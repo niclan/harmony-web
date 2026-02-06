@@ -41,6 +41,7 @@ ALLOWED_IMAGE_DOMAINS = {
 harmony_client = None
 loop = None
 loop_thread = None
+loop_ready = threading.Event()
 
 
 def start_background_loop():
@@ -49,6 +50,7 @@ def start_background_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     logger.info("Starting background event loop")
+    loop_ready.set()  # Signal that loop is ready
     loop.run_forever()
 
 
@@ -61,21 +63,41 @@ def run_async(coro):
 
     if loop is None or not loop.is_running():
         # Start background loop thread if not running
+        loop_ready.clear()
         loop_thread = threading.Thread(target=start_background_loop, daemon=True)
         loop_thread.start()
-        # Give the loop a moment to start
-        import time
-        time.sleep(0.1)
+        # Wait for loop to be ready (max 5 seconds)
+        if not loop_ready.wait(timeout=5):
+            raise RuntimeError("Background event loop failed to start")
 
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     return future.result(timeout=30)
 
 
 async def get_harmony_client():
-    """Get or create the global Harmony client."""
+    """
+    Get or create the global Harmony client.
+    Automatically reconnects if connection is lost.
+    """
     global harmony_client
 
-    if harmony_client is None:
+    # Check if we need to create a new client or reconnect
+    needs_connection = harmony_client is None
+
+    if harmony_client is not None:
+        # Test if connection is still alive by checking if we can get config
+        try:
+            # Simple connection health check - if config is empty, connection is dead
+            if not harmony_client.config:
+                logger.warning("Harmony Hub connection lost, reconnecting...")
+                harmony_client = None
+                needs_connection = True
+        except Exception:
+            logger.warning("Harmony Hub connection appears dead, reconnecting...")
+            harmony_client = None
+            needs_connection = True
+
+    if needs_connection:
         logger.debug(f"Creating new Harmony client for {HARMONY_IP}")
         harmony_client = HarmonyAPI(ip_address=HARMONY_IP)
 
@@ -229,6 +251,14 @@ def start_activity():
 
         async def start():
             client = await get_harmony_client()
+
+            # Validate activity_id exists in config
+            activities = client.config.get('activity', [])
+            valid_ids = [str(a['id']) for a in activities]
+
+            if str(activity_id) not in valid_ids:
+                raise ValueError(f"Invalid activity_id: {activity_id}")
+
             result = await client.start_activity(activity_id)
             return result
 
@@ -237,6 +267,9 @@ def start_activity():
 
         return jsonify({'success': True, 'activity_id': activity_id})
 
+    except ValueError as e:
+        logger.warning(f"Invalid activity ID: {e}")
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Error starting activity: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
@@ -490,4 +523,5 @@ def get_devices():
 
 if __name__ == '__main__':
     logger.info("Starting Harmony Hub Web Controller")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 'yes')
+    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
