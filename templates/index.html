@@ -29,148 +29,155 @@
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
         }
 
         h1 {
             color: #333;
             font-size: 28px;
-            margin-bottom: 10px;
+            text-align: center;
+            flex: 1;
         }
 
-        #currentActivity {
-            color: #667eea;
-            font-size: 18px;
+        .header-power-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 12px;
+            font-size: 11px;
             font-weight: 600;
+            gap: 4px;
+            min-width: 60px;
+        }
+
+        .header-power-btn .emoji {
+            font-size: 20px;
+        }
+
+        .header-power-btn:hover:not(:disabled) {
+            background: #c82333;
+            transform: scale(1.05);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header-power-btn:active:not(:disabled) {
+            transform: scale(0.95);
+        }
+
+        .header-power-btn.processing {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .header-power-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #999;
+        }
+
+        .header-power-btn:disabled:hover {
+            transform: none;
+            box-shadow: none;
         }
 
         .controls {
             background: white;
-            padding: 0;
+            padding: 20px;
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
-            max-height: 0;
-            overflow: hidden;
-            opacity: 0;
-            transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease, margin-bottom 0.3s ease;
+            transition: opacity 0.3s ease;
         }
 
-        .controls.active {
-            max-height: 500px;
-            opacity: 1;
-            padding: 20px;
+        .controls:not(.active) {
+            opacity: 0.4;
         }
 
-        .controls h2 {
-            color: #333;
-            font-size: 20px;
-            margin-bottom: 15px;
+        .controls:not(.active) button {
+            cursor: not-allowed;
         }
 
-        .volume-controls {
-            display: flex;
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
             gap: 10px;
-            margin-bottom: 20px;
         }
 
-        .volume-controls button {
-            flex: 1;
-            padding: 15px;
-            font-size: 16px;
+        .controls button {
+            padding: 20px 10px;
+            font-size: 14px;
             font-weight: 600;
             border: none;
             border-radius: 8px;
             cursor: pointer;
-            background: #667eea;
             color: white;
             transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            min-height: 80px;
         }
 
-        .volume-controls button:hover {
+        .controls button .emoji {
+            font-size: 28px;
+        }
+
+        .volume-controls {
+            background: #667eea;
+        }
+
+        .volume-controls:hover:not(:disabled) {
             background: #5568d3;
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
 
-        .volume-controls button:active {
-            transform: translateY(0) scale(0.95);
-        }
-
-        .volume-controls button.processing {
-            opacity: 0.6;
-            transform: scale(0.95);
-            pointer-events: none;
-        }
-
         .transport-controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .transport-controls button {
-            flex: 1;
-            padding: 15px;
-            font-size: 16px;
-            font-weight: 600;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
             background: #28a745;
-            color: white;
-            transition: all 0.3s ease;
         }
 
-        .transport-controls button:hover:not(:disabled) {
+        .transport-controls:hover:not(:disabled) {
             background: #218838;
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
 
-        .transport-controls button:active:not(:disabled) {
-            transform: translateY(0) scale(0.95);
-        }
-
-        .transport-controls button.processing {
-            opacity: 0.6;
-            transform: scale(0.95);
-            pointer-events: none;
-        }
-
-        .transport-controls button:disabled {
+        .transport-controls:disabled {
             background: #cccccc;
             color: #888888;
             cursor: not-allowed;
             opacity: 0.6;
         }
 
-        .power-off-btn {
-            width: 100%;
-            padding: 15px;
-            font-size: 16px;
-            font-weight: 600;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            background: #dc3545;
-            color: white;
-            transition: all 0.3s ease;
+        .controls button:active:not(:disabled) {
+            transform: translateY(0) scale(0.95);
         }
 
-        .power-off-btn:hover {
-            background: #c82333;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        }
-
-        .power-off-btn:active {
-            transform: translateY(0) scale(0.98);
-        }
-
-        .power-off-btn.processing {
+        .controls button.processing {
             opacity: 0.6;
-            transform: scale(0.98);
+            transform: scale(0.95);
             pointer-events: none;
+        }
+
+        .controls button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #999;
+        }
+
+        .controls button:disabled:hover {
+            transform: none;
+            box-shadow: none;
         }
 
         .activities {
@@ -269,25 +276,42 @@
 <body>
     <div class="container">
         <header>
+            <button id="headerPowerBtn" class="header-power-btn" onclick="powerOff(event)">
+                <span class="emoji">⏻</span>
+                <span>Power</span>
+            </button>
             <h1>Logitech Harmony Hub Controller</h1>
-            <div id="currentActivity">Loading...</div>
         </header>
 
         <div id="error" class="error"></div>
 
         <div id="controls" class="controls">
-            <h2>Active Controls</h2>
-            <div class="transport-controls">
-                <button id="playBtn" onclick="transportControl('play', event)" disabled>▶️ Play</button>
-                <button id="pauseBtn" onclick="transportControl('pause', event)" disabled>⏸️ Pause</button>
-                <button id="stopBtn" onclick="transportControl('stop', event)" disabled>⏹️ Stop</button>
+            <div class="controls-grid">
+                <button id="playBtn" class="transport-controls" onclick="transportControl('play', event)" disabled>
+                    <span class="emoji">▶️</span>
+                    <span>Play</span>
+                </button>
+                <button id="pauseBtn" class="transport-controls" onclick="transportControl('pause', event)" disabled>
+                    <span class="emoji">⏸️</span>
+                    <span>Pause</span>
+                </button>
+                <button id="stopBtn" class="transport-controls" onclick="transportControl('stop', event)" disabled>
+                    <span class="emoji">⏹️</span>
+                    <span>Stop</span>
+                </button>
+                <button class="volume-controls" onclick="volumeControl('up', event)">
+                    <span class="emoji">🔊</span>
+                    <span>Volume Up</span>
+                </button>
+                <button class="volume-controls" onclick="volumeControl('down', event)">
+                    <span class="emoji">🔉</span>
+                    <span>Volume Down</span>
+                </button>
+                <button class="volume-controls" onclick="volumeControl('mute', event)">
+                    <span class="emoji">🔇</span>
+                    <span>Mute</span>
+                </button>
             </div>
-            <div class="volume-controls">
-                <button onclick="volumeControl('up', event)">🔊 Volume Up</button>
-                <button onclick="volumeControl('down', event)">🔉 Volume Down</button>
-                <button onclick="volumeControl('mute', event)">🔇 Mute</button>
-            </div>
-            <button class="power-off-btn" onclick="powerOff(event)">⏻ Power Off</button>
         </div>
 
         <div id="activities" class="loading">
@@ -354,28 +378,25 @@
                     previousActivityId = currentActivityId;
                     currentActivityId = newActivityId;
 
-                    const currentDiv = document.getElementById('currentActivity');
-                    currentDiv.textContent = isPowerOff ?
-                        'Current Activity: PowerOff' :
-                        `Current Activity: ${data.activity_name}`;
-
                     // Only re-render activities if activity changed
                     renderActivities();
                 }
 
-                // Update controls visibility based on current state (outside the change check)
+                // Update controls state based on current activity
                 const controlsDiv = document.getElementById('controls');
-                const shouldShowControls = !isPowerOff;
-                const isShowingControls = controlsDiv.classList.contains('active');
+                const shouldEnableControls = !isPowerOff;
 
-                if (shouldShowControls && !isShowingControls) {
+                if (shouldEnableControls) {
                     controlsDiv.classList.add('active');
                     fetchTransportControls();
-                } else if (!shouldShowControls && isShowingControls) {
+                    // Enable volume and power-off buttons
+                    document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = false);
+                    document.getElementById('headerPowerBtn').disabled = false;
+                } else {
                     controlsDiv.classList.remove('active');
-                } else if (shouldShowControls) {
-                    // Controls already showing, update transport buttons
-                    fetchTransportControls();
+                    // Disable all control buttons when powered off
+                    document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
+                    document.getElementById('headerPowerBtn').disabled = true;
                 }
             } catch (error) {
                 showError('Failed to fetch current activity: ' + error.message);
@@ -452,13 +473,15 @@
                 ignoreAutoRefreshUntil = Date.now() + 3000;
 
                 currentActivityId = activityId;
-                document.getElementById('currentActivity').textContent =
-                    `Current Activity: ${activityName}`;
 
                 if (activityId === '-1') {
                     document.getElementById('controls').classList.remove('active');
+                    document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
+                    document.getElementById('headerPowerBtn').disabled = true;
                 } else {
                     document.getElementById('controls').classList.add('active');
+                    document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = false);
+                    document.getElementById('headerPowerBtn').disabled = false;
                     fetchTransportControls();
                 }
 
@@ -524,9 +547,9 @@
                 ignoreAutoRefreshUntil = Date.now() + 3000;
 
                 currentActivityId = '-1';
-                document.getElementById('currentActivity').textContent =
-                    'Current Activity: PowerOff';
                 document.getElementById('controls').classList.remove('active');
+                document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
+                document.getElementById('headerPowerBtn').disabled = true;
                 renderActivities();
             } catch (error) {
                 showError('Failed to power off: ' + error.message);
