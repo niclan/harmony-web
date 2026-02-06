@@ -83,12 +83,29 @@ pip install -r requirements.txt
 
 **templates/index.html** - Single-page web UI:
 - Vanilla JavaScript (no frameworks)
-- Auto-refreshes current activity every 5 seconds
-- Smart UI updates that avoid flickering by checking state changes before DOM manipulation
-- Activity cards display 80x80px images or type-based fallback icons
-- Transport buttons auto-enable/disable based on PassThroughActivityRole availability
-- Button click feedback with processing state (scale/opacity animations)
-- Responsive grid layout for activities
+- **UI Design**:
+  - Black background (#000000) for high contrast
+  - White cards with rounded corners for all content sections
+  - Power button in header (left side, 60px wide, 20px emoji icon)
+  - Always-visible control buttons (grayed out to 40% opacity when inactive)
+  - 6 control buttons in single row: Play, Pause, Stop, Volume Up, Volume Down, Mute
+  - Square-shaped control buttons (80px min-height) with 28px emoji icons above text
+  - Color-coded controls: green (transport), purple (volume), red (power)
+- **Activity Indication**:
+  - Active activity card has prominent 4px green border (#28a745)
+  - Activity cards display 80x80px images or type-based fallback icons
+  - No Active/Inactive text labels (visual border is sufficient)
+- **Behavior**:
+  - Auto-refreshes current activity every 5 seconds
+  - Smart UI updates that avoid flickering by checking state changes before DOM manipulation
+  - Transport buttons auto-enable/disable based on PassThroughActivityRole availability
+  - Volume and power buttons disabled when no activity is active
+  - Button click feedback with processing state (scale/opacity animations)
+  - 3-second grace period after activity changes to prevent auto-refresh interference
+- **Layout**:
+  - Responsive grid layout for activities (auto-fill, 250px min column width)
+  - Single-row grid layout for control buttons (6 columns)
+  - Flexbox header with power button and centered title
 - Inline CSS and JS (no external dependencies)
 
 ### API Endpoints
