@@ -5,7 +5,9 @@ A Python Flask web application that provides a web interface and REST API for co
 ## Features
 
 - Web interface to view and start Harmony Hub activities
+- Transport controls (play/pause/stop) for media activities
 - Volume control (up/down/mute) when an activity is active
+- Intelligent button enabling based on activity capabilities
 - Power off all activities
 - REST API for programmatic control
 - Auto-refresh of current activity status
@@ -52,16 +54,23 @@ Set the `HARMONY_IP` environment variable to your Harmony Hub's IP address. Defa
 - `GET /api/current_activity` - Get current activity
 - `POST /api/start_activity` - Start activity (requires `activity_id` in JSON body)
 - `POST /api/power_off` - Turn off all activities
+- `GET /api/transport_controls` - Get available transport controls for current activity
+- `POST /api/transport` - Transport control (requires `action`: "play", "pause", or "stop")
 - `POST /api/volume` - Volume control (requires `action`: "up", "down", or "mute")
 - `GET /api/devices` - List all devices
 
 ## Requirements
 
 - Python 3.11+
-- Flask 3.0.0
+- Flask 3.1.2
 - aioharmony 0.5.3
 - Logitech Harmony Hub on your network
 
 ## Architecture
 
-The application uses Flask (synchronous) with aioharmony (asynchronous) via an async-sync bridge pattern. Each request creates a new event loop to handle the async Harmony Hub communication.
+The application uses Flask (synchronous) with aioharmony (asynchronous) via an async-sync bridge pattern. A persistent event loop runs in a background thread to maintain stable connections with the Harmony Hub.
+
+**Control Mapping:**
+- **Volume controls**: Use `VolumeActivityRole` from activity configuration
+- **Transport controls**: Use `PassThroughActivityRole` (media player device)
+- Buttons automatically enable/disable based on activity capabilities
