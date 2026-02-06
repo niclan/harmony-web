@@ -21,3 +21,7 @@ build/
 *.elc
 auto-save-list
 tramp
+
+# Cached activity images
+static/images/activities/*
+!static/images/activities/.gitkeep

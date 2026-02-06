@@ -8,8 +8,10 @@ import os
 import asyncio
 import logging
 import threading
+from pathlib import Path
 from flask import Flask, render_template, jsonify, request
 from aioharmony.harmonyapi import HarmonyAPI, SendCommandDevice
+import requests
 
 # Configure logging
 logging.basicConfig(
@@ -83,6 +85,46 @@ async def get_harmony_client():
     return harmony_client
 
 
+def cache_activity_image(activity_id, base_uri, image_key):
+    """
+    Download and cache an activity image locally.
+    Returns the local path relative to static directory, or None if download fails.
+    """
+    if not image_key:
+        return None
+
+    # Create cache directory if it doesn't exist
+    cache_dir = Path('static/images/activities')
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use activity ID as filename to ensure uniqueness
+    file_extension = Path(image_key).suffix or '.png'
+    local_filename = f"{activity_id}{file_extension}"
+    local_path = cache_dir / local_filename
+
+    # If already cached, return the path
+    if local_path.exists():
+        return f'/static/images/activities/{local_filename}'
+
+    # Download the image
+    try:
+        full_url = base_uri + image_key
+        logger.debug(f"Downloading activity image from {full_url}")
+        response = requests.get(full_url, timeout=10)
+        response.raise_for_status()
+
+        # Save to cache
+        with open(local_path, 'wb') as f:
+            f.write(response.content)
+
+        logger.info(f"Cached activity image: {local_filename}")
+        return f'/static/images/activities/{local_filename}'
+
+    except Exception as e:
+        logger.warning(f"Failed to cache activity image from {full_url}: {e}")
+        return None
+
+
 @app.route('/')
 def index():
     """Serve the main web interface."""
@@ -101,6 +143,15 @@ def get_activities():
             return activities
 
         activities = run_async(fetch_activities())
+
+        # Cache activity images and add local image paths
+        for activity in activities:
+            base_uri = activity.get('baseImageUri', '')
+            image_key = activity.get('imageKey', '')
+            if image_key:
+                local_image_path = cache_activity_image(activity['id'], base_uri, image_key)
+                activity['cachedImageUrl'] = local_image_path
+
         logger.debug(f"Found {len(activities)} activities")
         return jsonify({'activities': activities})
 

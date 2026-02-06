@@ -187,6 +187,27 @@
             cursor: pointer;
             transition: all 0.3s ease;
             border: 3px solid transparent;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .activity-image {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+            margin-bottom: 15px;
+        }
+
+        .activity-icon-fallback {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            color: #667eea;
         }
 
         .activity-card:hover {
@@ -214,11 +235,13 @@
             color: #333;
             font-size: 18px;
             margin-bottom: 5px;
+            text-align: center;
         }
 
         .activity-card p {
             color: #666;
             font-size: 14px;
+            text-align: center;
         }
 
         .status {
@@ -389,11 +412,18 @@
             container.innerHTML = activities.map(activity => {
                 const isActive = activity.id === currentActivityId;
                 const isPowerOff = activity.id === '-1';
+                const imageUrl = activity.cachedImageUrl;
+
+                // Image or fallback icon
+                const imageHtml = imageUrl
+                    ? `<img src="${imageUrl}" alt="${activity.label}" class="activity-image">`
+                    : `<div class="activity-icon-fallback">⚡</div>`;
 
                 return `
                     <div class="activity-card ${isActive ? 'active' : ''}"
                          id="activity-${activity.id}"
                          onclick="startActivity('${activity.id}', '${activity.label}', event)">
+                        ${imageHtml}
                         <h3>${activity.label}</h3>
                         <p>${activity.type || 'Activity'}</p>
                         <span class="status ${isActive ? 'active' : 'inactive'}">
