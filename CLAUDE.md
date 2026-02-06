@@ -61,8 +61,11 @@ pip install -r requirements.txt
   - Falls back to `PlayMediaActivityRole` if PassThroughActivityRole not present
   - This mapping ensures commands go to the correct device (e.g., play/pause to Squeezebox, volume to amplifier)
 
-- **Activity Image Caching**: Downloads activity images from Harmony Hub CDN and caches locally (app.py:86-123)
+- **Activity Image Caching**: Downloads activity images from Harmony Hub CDN and caches locally (app.py:97-148)
   - Images downloaded from `baseImageUri + imageKey` fields in activity config
+  - **Security**: Domain whitelist restricts downloads to trusted Logitech/Harmony CDN domains only (app.py:33-37)
+    - Allowed domains: `rcbu-prod-ssl-amr.myharmony.com`, `home.myharmony.com`, `svcs.myharmony.com`
+    - Rejects and logs attempts to download from untrusted domains
   - Cached in `static/images/activities/` directory (gitignored except .gitkeep)
   - Cache-forever strategy: images never expire once downloaded
   - Type-based fallback icons used when no image available:

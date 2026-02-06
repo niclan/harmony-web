@@ -9,6 +9,7 @@ import asyncio
 import logging
 import threading
 from pathlib import Path
+from urllib.parse import urlparse
 from flask import Flask, render_template, jsonify, request
 from aioharmony.harmonyapi import HarmonyAPI, SendCommandDevice
 import requests
@@ -28,6 +29,13 @@ app = Flask(__name__)
 # Configuration
 HARMONY_IP = os.environ.get('HARMONY_IP', '192.168.1.123')
 logger.info(f"Using Harmony Hub IP: {HARMONY_IP}")
+
+# Allowed domains for activity image downloads (Logitech/Harmony CDN only)
+ALLOWED_IMAGE_DOMAINS = {
+    'rcbu-prod-ssl-amr.myharmony.com',  # Harmony Hub CDN (Americas)
+    'home.myharmony.com',                # Legacy Harmony domain
+    'svcs.myharmony.com',                # Harmony services domain
+}
 
 # Global harmony client and event loop
 harmony_client = None
@@ -89,8 +97,28 @@ def cache_activity_image(activity_id, base_uri, image_key):
     """
     Download and cache an activity image locally.
     Returns the local path relative to static directory, or None if download fails.
+    Only downloads from whitelisted Logitech/Harmony domains for security.
     """
     if not image_key:
+        return None
+
+    # Validate the base_uri domain is from Logitech/Harmony CDN
+    if not base_uri:
+        logger.warning(f"Empty base_uri for activity {activity_id}, skipping image download")
+        return None
+
+    try:
+        parsed_url = urlparse(base_uri)
+        domain = parsed_url.netloc.lower()
+
+        if domain not in ALLOWED_IMAGE_DOMAINS:
+            logger.warning(
+                f"Rejected image download from untrusted domain '{domain}' "
+                f"for activity {activity_id}. Only Logitech/Harmony CDN domains are allowed."
+            )
+            return None
+    except Exception as e:
+        logger.warning(f"Failed to parse base_uri '{base_uri}' for activity {activity_id}: {e}")
         return None
 
     # Create cache directory if it doesn't exist
