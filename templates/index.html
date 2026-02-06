@@ -326,6 +326,12 @@
         let lastActivityChangeTime = 0;
         let ignoreAutoRefreshUntil = 0;
 
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         function showError(message) {
             const errorDiv = document.getElementById('error');
             errorDiv.textContent = message;
@@ -431,15 +437,15 @@
 
                 // Image or fallback icon
                 const imageHtml = imageUrl
-                    ? `<img src="${imageUrl}" alt="${activity.label}" class="activity-image">`
+                    ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(activity.label)}" class="activity-image">`
                     : `<div class="activity-icon-fallback">${getFallbackIcon(activity.type)}</div>`;
 
                 return `
                     <div class="activity-card ${isActive ? 'active' : ''}"
-                         id="activity-${activity.id}"
-                         onclick="startActivity('${activity.id}', '${activity.label}', event)">
+                         id="activity-${escapeHtml(activity.id)}"
+                         onclick="startActivity('${escapeHtml(activity.id)}', '${escapeHtml(activity.label)}', event)">
                         ${imageHtml}
-                        <h3>${activity.label}</h3>
+                        <h3>${escapeHtml(activity.label)}</h3>
                     </div>
                 `;
             }).join('');
