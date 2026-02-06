@@ -256,6 +256,130 @@ def volume_control():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/transport_controls', methods=['GET'])
+def get_transport_controls():
+    """Get available transport controls for current activity."""
+    try:
+        logger.debug("Checking available transport controls")
+
+        async def check_transport():
+            client = await get_harmony_client()
+            current_activity_id, current_activity_name = client.current_activity
+
+            if current_activity_id == '-1':
+                return {'available': False, 'controls': []}
+
+            # Find the current activity in config
+            activities = client.config.get('activity', [])
+            current_activity = None
+            for activity in activities:
+                if str(activity['id']) == str(current_activity_id):
+                    current_activity = activity
+                    break
+
+            if not current_activity:
+                return {'available': False, 'controls': []}
+
+            # Check controlGroups for transport controls
+            available_controls = []
+            for group in current_activity.get('controlGroup', []):
+                for func in group.get('function', []):
+                    name = func.get('name', '')
+                    if name in ['Play', 'Pause', 'Stop', 'PlayPause']:
+                        available_controls.append(name.lower())
+
+            return {
+                'available': len(available_controls) > 0,
+                'controls': list(set(available_controls))
+            }
+
+        result = run_async(check_transport())
+        logger.debug(f"Transport controls: {result}")
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error checking transport controls: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/transport', methods=['POST'])
+def transport_control():
+    """Control media transport (play/pause/stop)."""
+    try:
+        data = request.get_json()
+        if not data or 'action' not in data:
+            return jsonify({'error': 'action required (play/pause/stop)'}), 400
+
+        action = data['action'].lower()
+        if action not in ['play', 'pause', 'stop', 'playpause']:
+            return jsonify({'error': 'action must be play, pause, stop, or playpause'}), 400
+
+        logger.debug(f"Transport control: {action}")
+
+        async def send_transport_command():
+            client = await get_harmony_client()
+
+            # Get current activity
+            current_activity_id, current_activity_name = client.current_activity
+
+            if current_activity_id == '-1':
+                logger.warning("Cannot control transport when powered off")
+                raise ValueError("No activity is running")
+
+            # Find the current activity in config
+            activities = client.config.get('activity', [])
+            current_activity = None
+            for activity in activities:
+                if str(activity['id']) == str(current_activity_id):
+                    current_activity = activity
+                    break
+
+            if not current_activity:
+                logger.warning(f"Current activity {current_activity_id} not found in config")
+                raise ValueError("Current activity not found")
+
+            # Get transport device ID from activity roles
+            # Try PassThroughActivityRole first (for media players), then fall back to PlayMediaActivityRole
+            roles = current_activity.get('roles', {})
+            transport_device_id = roles.get('PassThroughActivityRole') or roles.get('PlayMediaActivityRole')
+
+            if not transport_device_id:
+                logger.warning(f"No PassThroughActivityRole or PlayMediaActivityRole found for activity {current_activity_name}")
+                raise ValueError("No transport control device configured for this activity")
+
+            logger.debug(f"Found transport device ID: {transport_device_id} for activity {current_activity_name}")
+
+            # Map action to standard command names
+            command_map = {
+                'play': 'Play',
+                'pause': 'Pause',
+                'stop': 'Stop',
+                'playpause': 'PlayPause'
+            }
+            command_name = command_map[action]
+
+            # Send command using SendCommandDevice
+            send_command = SendCommandDevice(
+                device=str(transport_device_id),
+                command=command_name,
+                delay=0
+            )
+            await client.send_commands(send_command)
+            return True
+
+        run_async(send_transport_command())
+        logger.info(f"Successfully sent transport {action} command")
+
+        return jsonify({'success': True, 'action': action})
+
+    except ValueError as e:
+        logger.error(f"Transport control error: {e}")
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        logger.error(f"Error controlling transport: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/devices', methods=['GET'])
 def get_devices():
     """Get list of all devices."""
