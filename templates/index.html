@@ -96,6 +96,42 @@
             transform: translateY(0);
         }
 
+        .transport-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .transport-controls button {
+            flex: 1;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #28a745;
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        .transport-controls button:hover:not(:disabled) {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .transport-controls button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .transport-controls button:disabled {
+            background: #cccccc;
+            color: #888888;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
         .power-off-btn {
             width: 100%;
             padding: 15px;
@@ -203,6 +239,11 @@
 
         <div id="controls" class="controls">
             <h2>Active Controls</h2>
+            <div class="transport-controls">
+                <button id="playBtn" onclick="transportControl('play')" disabled>Play</button>
+                <button id="pauseBtn" onclick="transportControl('pause')" disabled>Pause</button>
+                <button id="stopBtn" onclick="transportControl('stop')" disabled>Stop</button>
+            </div>
             <div class="volume-controls">
                 <button onclick="volumeControl('up')">Volume Up</button>
                 <button onclick="volumeControl('down')">Volume Down</button>
@@ -291,8 +332,12 @@
 
                 if (shouldShowControls && !isShowingControls) {
                     controlsDiv.classList.add('active');
+                    fetchTransportControls();
                 } else if (!shouldShowControls && isShowingControls) {
                     controlsDiv.classList.remove('active');
+                } else if (shouldShowControls) {
+                    // Controls already showing, update transport buttons
+                    fetchTransportControls();
                 }
             } catch (error) {
                 showError('Failed to fetch current activity: ' + error.message);
@@ -357,6 +402,7 @@
                     document.getElementById('controls').classList.remove('active');
                 } else {
                     document.getElementById('controls').classList.add('active');
+                    fetchTransportControls();
                 }
 
                 renderActivities();
@@ -412,6 +458,55 @@
                 renderActivities();
             } catch (error) {
                 showError('Failed to power off: ' + error.message);
+            }
+        }
+
+        async function fetchTransportControls() {
+            try {
+                const response = await fetch('/api/transport_controls');
+                const data = await response.json();
+
+                if (data.error) {
+                    // Disable all transport buttons on error
+                    document.getElementById('playBtn').disabled = true;
+                    document.getElementById('pauseBtn').disabled = true;
+                    document.getElementById('stopBtn').disabled = true;
+                    return;
+                }
+
+                // Enable/disable buttons based on availability
+                const controls = data.controls || [];
+                document.getElementById('playBtn').disabled = !controls.includes('play');
+                document.getElementById('pauseBtn').disabled = !controls.includes('pause');
+                document.getElementById('stopBtn').disabled = !controls.includes('stop');
+
+            } catch (error) {
+                console.error('Failed to fetch transport controls:', error);
+                // Disable all buttons on error
+                document.getElementById('playBtn').disabled = true;
+                document.getElementById('pauseBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = true;
+            }
+        }
+
+        async function transportControl(action) {
+            try {
+                const response = await fetch('/api/transport', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ action: action })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+            } catch (error) {
+                showError('Failed to control transport: ' + error.message);
             }
         }
 
