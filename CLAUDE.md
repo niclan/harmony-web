@@ -50,10 +50,12 @@ pip install -r requirements.txt
 **app.py** - Main Flask application with the following architecture:
 
 - **Async-Sync Bridge Pattern**: Flask (synchronous) wraps aioharmony (asynchronous) using `run_async()` helper
-  - Maintains a persistent event loop in a background thread (app.py:36-42)
-  - Uses `asyncio.run_coroutine_threadsafe()` to execute async operations from sync Flask handlers (app.py:45-61)
-  - Single global `harmony_client` instance maintained via `get_harmony_client()` (app.py:64-83)
+  - Maintains a persistent event loop in a background thread
+  - Uses `threading.Event` to ensure loop is ready before executing coroutines (eliminates race conditions)
+  - Uses `asyncio.run_coroutine_threadsafe()` to execute async operations from sync Flask handlers
+  - Single global `harmony_client` instance maintained via `get_harmony_client()`
   - Connection is persistent and reused across all requests
+  - **Connection Resilience**: Automatically detects and reconnects if Harmony Hub connection is lost
 
 - **Control Device Resolution**: Uses Harmony Hub's activity role fields to determine which device receives commands:
   - `VolumeActivityRole`: Device for volume commands (amplifier/receiver) - app.py:221
@@ -75,6 +77,11 @@ pip install -r requirements.txt
     - ⏻ (PowerOff - power off state)
     - ⚡ (default/generic activities)
   - `/api/activities` endpoint includes `cachedImageUrl` field with local path
+
+- **Input Validation**: Activity IDs validated against Harmony Hub config before execution
+  - `/api/start_activity` validates activity_id exists in config
+  - Returns 400 Bad Request for invalid activity IDs
+  - Prevents commands to non-existent activities
 
 - **Logging**: Comprehensive debug logging throughout
   - Application logs at DEBUG level
@@ -127,10 +134,13 @@ All endpoints return JSON with `{'error': str}` on failure or appropriate succes
 
 ### Configuration
 
-Environment variable:
+Environment variables:
 - `HARMONY_IP` - Harmony Hub IP address (default: "192.168.1.123")
+- `FLASK_DEBUG` - Enable Flask debug mode (default: "False", accepts: "true", "1", "yes")
 
 Set via export, .env file, or Docker environment.
+
+**Production Deployment:** Keep `FLASK_DEBUG=False` (default) to disable debug mode and Flask debugger.
 
 ### Harmony Hub Communication
 
@@ -200,8 +210,25 @@ All API routes:
 
 ## Testing
 
-No test framework is currently configured. When adding tests, consider:
-- Mocking `HarmonyAPI` client for unit tests
-- Testing the async-sync bridge behavior
-- Testing error handling for connection failures
-- Testing role-based device resolution logic
+**Test Framework:** Python's built-in `unittest` module
+
+**Running Tests:**
+```bash
+python -m unittest discover tests -v
+```
+
+**Test Coverage:**
+- Flask route endpoints (index, activities, current_activity, start_activity, power_off)
+- Image caching functionality with domain validation
+- Input validation for activity IDs
+- Error handling for invalid requests
+
+**Test Files:**
+- `tests/test_app.py` - Main application tests (11 test cases)
+
+**Key Test Areas:**
+- Mocked `HarmonyAPI` client for isolated testing
+- Activity ID validation against config
+- Domain whitelist enforcement for image downloads
+- Error responses for invalid input
+- Successful API responses with mocked data
