@@ -280,13 +280,15 @@ def get_transport_controls():
             if not current_activity:
                 return {'available': False, 'controls': []}
 
-            # Check if activity has PassThroughActivityRole (for media transport)
-            # This matches the logic used in the actual transport control function
+            # Check if activity has transport control capability
+            # Uses same logic as transport_control() function:
+            # Try PassThroughActivityRole first (for separate media players like Squeezebox)
+            # Fall back to PlayMediaActivityRole (for integrated players like CD on Denon)
             roles = current_activity.get('roles', {})
-            has_transport = 'PassThroughActivityRole' in roles
+            transport_device_id = roles.get('PassThroughActivityRole') or roles.get('PlayMediaActivityRole')
 
-            if has_transport:
-                # If PassThroughActivityRole exists, assume standard transport controls
+            if transport_device_id:
+                # Activity has a transport-capable device
                 return {
                     'available': True,
                     'controls': ['play', 'pause', 'stop']
