@@ -414,10 +414,22 @@
                 const isPowerOff = activity.id === '-1';
                 const imageUrl = activity.cachedImageUrl;
 
+                // Get fallback icon based on activity type
+                function getFallbackIcon(type) {
+                    const iconMap = {
+                        'VirtualCdMulti': '🎵',      // Music/Audio
+                        'VirtualDvd': '📀',           // DVD/Video
+                        'VirtualTelevisionN': '📺',   // TV
+                        'PowerOff': '⏻',             // Power off
+                        'VirtualGeneric': '⚡',       // Generic
+                    };
+                    return iconMap[type] || '⚡';
+                }
+
                 // Image or fallback icon
                 const imageHtml = imageUrl
                     ? `<img src="${imageUrl}" alt="${activity.label}" class="activity-image">`
-                    : `<div class="activity-icon-fallback">⚡</div>`;
+                    : `<div class="activity-icon-fallback">${getFallbackIcon(activity.type)}</div>`;
 
                 return `
                     <div class="activity-card ${isActive ? 'active' : ''}"
