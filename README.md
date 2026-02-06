@@ -72,5 +72,5 @@ The application uses Flask (synchronous) with aioharmony (asynchronous) via an a
 
 **Control Mapping:**
 - **Volume controls**: Use `VolumeActivityRole` from activity configuration
-- **Transport controls**: Use `PassThroughActivityRole` (media player device)
+- **Transport controls**: Use `PassThroughActivityRole` (separate media player) or `PlayMediaActivityRole` (integrated player)
 - Buttons automatically enable/disable based on activity capabilities

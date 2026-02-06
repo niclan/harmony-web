@@ -82,10 +82,10 @@ All endpoints return JSON with `{'error': str}` on failure or appropriate succes
 - `GET /api/current_activity` - Get current activity ID and name (returns tuple from `client.current_activity`)
 - `POST /api/start_activity` - Start activity by ID (requires `{"activity_id": str}`)
 - `POST /api/power_off` - Turn off all activities (activity ID -1)
-- `GET /api/transport_controls` - Check if current activity supports transport controls (checks for PassThroughActivityRole)
+- `GET /api/transport_controls` - Check if current activity supports transport controls (checks for PassThroughActivityRole or PlayMediaActivityRole)
 - `POST /api/transport` - Transport control (requires `{"action": "play"|"pause"|"stop"}`)
-  - Uses PassThroughActivityRole to find correct device (app.py:342-344)
-  - Sends standard command names (Play, Pause, Stop) to the media player device
+  - Uses PassThroughActivityRole first, falls back to PlayMediaActivityRole (app.py:342-344)
+  - Sends standard command names (Play, Pause, Stop) to the appropriate device
 - `POST /api/volume` - Volume control (requires `{"action": "up"|"down"|"mute"}`)
   - Uses VolumeActivityRole to find correct device (app.py:221)
   - Returns 404 if no volume device found for activity
@@ -112,11 +112,16 @@ The application uses the `aioharmony` library which:
 Understanding Harmony Hub activity roles is critical for proper device control:
 
 - **VolumeActivityRole** (string): Device ID for volume control (typically an amplifier/receiver)
-- **roles['PassThroughActivityRole']** (dict entry): Device ID for transport controls (typically a media player like Squeezebox)
-- **roles['PlayMediaActivityRole']** (dict entry): Fallback device for media controls if PassThroughActivityRole missing
+- **roles['PassThroughActivityRole']** (dict entry): Device ID for transport controls when using a separate media player (e.g., Squeezebox, Roku)
+- **roles['PlayMediaActivityRole']** (dict entry): Device ID for transport controls when media playback is integrated into the amplifier/receiver (e.g., CD player)
 - **controlGroup** (list): Contains button mappings but may be incorrectly configured - do NOT rely on these for determining which device to send commands to
 
-Example from Squeezebox activity:
+**Transport Control Resolution:**
+1. Check for PassThroughActivityRole first (separate media player)
+2. Fall back to PlayMediaActivityRole (integrated media player)
+3. If neither exists, transport controls are disabled
+
+Example from Squeezebox activity (separate media player):
 ```python
 activity = {
     'id': '18609707',
@@ -124,8 +129,22 @@ activity = {
     'VolumeActivityRole': '63205085',  # Denon amplifier
     'roles': {
         'PassThroughActivityRole': '69365831',  # Squeezebox Touch media player
-        'PlayMediaActivityRole': '63205085',
+        'PlayMediaActivityRole': '63205085',    # Also present but not used (PassThrough takes priority)
         'VolumeActivityRole': '63205085'
+    }
+}
+```
+
+Example from CD activity (integrated media player):
+```python
+activity = {
+    'id': '44317642',
+    'label': 'CD',
+    'VolumeActivityRole': '63205085',  # Denon amplifier
+    'roles': {
+        'PlayMediaActivityRole': '63205085',  # CD player is part of the Denon device
+        'VolumeActivityRole': '63205085'
+        # No PassThroughActivityRole - CD is integrated
     }
 }
 ```
@@ -142,7 +161,7 @@ All API routes:
 
 - The async-sync bridge uses a background thread with a persistent event loop to avoid connection instability
 - UI implements a 3-second "grace period" after activity changes where auto-refresh is paused to prevent flickering (templates/index.html)
-- Transport button availability is determined solely by presence of PassThroughActivityRole, not by checking controlGroups
+- Transport button availability is determined by presence of PassThroughActivityRole OR PlayMediaActivityRole, not by checking controlGroups
 - Volume and transport controls both validate that an activity is running (not PowerOff state with ID "-1")
 
 ## Testing
