@@ -172,6 +172,9 @@ def get_activities():
 
         activities = run_async(fetch_activities())
 
+        # Filter out PowerOff activity (redundant with Power Off button)
+        activities = [a for a in activities if a.get('label') != 'PowerOff']
+
         # Cache activity images and add local image paths
         for activity in activities:
             base_uri = activity.get('baseImageUri', '')
