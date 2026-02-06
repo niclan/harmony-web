@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Harmony Hub Controller</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        #currentActivity {
+            color: #667eea;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .controls {
+            background: white;
+            padding: 0;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            max-height: 0;
+            overflow: hidden;
+            opacity: 0;
+            transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease, margin-bottom 0.3s ease;
+        }
+
+        .controls.active {
+            max-height: 500px;
+            opacity: 1;
+            padding: 20px;
+        }
+
+        .controls h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+
+        .volume-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .volume-controls button {
+            flex: 1;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #667eea;
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        .volume-controls button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .volume-controls button:active {
+            transform: translateY(0);
+        }
+
+        .power-off-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #dc3545;
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        .power-off-btn:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .activities {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .activity-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 3px solid transparent;
+        }
+
+        .activity-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .activity-card.active {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .activity-card h3 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        .activity-card p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .status.active {
+            background: #28a745;
+            color: white;
+        }
+
+        .status.inactive {
+            background: #6c757d;
+            color: white;
+        }
+
+        .error {
+            background: #dc3545;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Logitech Harmony Hub Controller</h1>
+            <div id="currentActivity">Loading...</div>
+        </header>
+
+        <div id="error" class="error"></div>
+
+        <div id="controls" class="controls">
+            <h2>Active Controls</h2>
+            <div class="volume-controls">
+                <button onclick="volumeControl('up')">Volume Up</button>
+                <button onclick="volumeControl('down')">Volume Down</button>
+                <button onclick="volumeControl('mute')">Mute</button>
+            </div>
+            <button class="power-off-btn" onclick="powerOff()">Power Off</button>
+        </div>
+
+        <div id="activities" class="loading">
+            Loading activities...
+        </div>
+    </div>
+
+    <script>
+        let currentActivityId = null;
+        let previousActivityId = null;
+        let activities = [];
+        let lastActivityChangeTime = 0;
+        let ignoreAutoRefreshUntil = 0;
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+            setTimeout(() => {
+                errorDiv.classList.remove('show');
+            }, 5000);
+        }
+
+        async function fetchActivities() {
+            try {
+                const response = await fetch('/api/activities');
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                activities = data.activities;
+                renderActivities();
+            } catch (error) {
+                showError('Failed to fetch activities: ' + error.message);
+            }
+        }
+
+        async function fetchCurrentActivity() {
+            try {
+                const response = await fetch('/api/current_activity');
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                // Convert to string for consistent comparison
+                const newActivityId = String(data.activity_id);
+                const isPowerOff = newActivityId === '-1';
+
+                // Check if we should ignore this refresh (activity transition in progress)
+                const now = Date.now();
+                if (now < ignoreAutoRefreshUntil) {
+                    // Still transitioning, don't update from auto-refresh
+                    return;
+                }
+
+                // Only update if activity actually changed
+                if (newActivityId !== String(currentActivityId)) {
+                    previousActivityId = currentActivityId;
+                    currentActivityId = newActivityId;
+
+                    const currentDiv = document.getElementById('currentActivity');
+                    currentDiv.textContent = isPowerOff ?
+                        'Current Activity: PowerOff' :
+                        `Current Activity: ${data.activity_name}`;
+
+                    // Only re-render activities if activity changed
+                    renderActivities();
+                }
+
+                // Update controls visibility based on current state (outside the change check)
+                const controlsDiv = document.getElementById('controls');
+                const shouldShowControls = !isPowerOff;
+                const isShowingControls = controlsDiv.classList.contains('active');
+
+                if (shouldShowControls && !isShowingControls) {
+                    controlsDiv.classList.add('active');
+                } else if (!shouldShowControls && isShowingControls) {
+                    controlsDiv.classList.remove('active');
+                }
+            } catch (error) {
+                showError('Failed to fetch current activity: ' + error.message);
+            }
+        }
+
+        function renderActivities() {
+            const container = document.getElementById('activities');
+
+            if (activities.length === 0) {
+                container.innerHTML = '<div class="loading">No activities found</div>';
+                return;
+            }
+
+            container.className = 'activities';
+            container.innerHTML = activities.map(activity => {
+                const isActive = activity.id === currentActivityId;
+                const isPowerOff = activity.id === '-1';
+
+                return `
+                    <div class="activity-card ${isActive ? 'active' : ''}"
+                         onclick="startActivity('${activity.id}', '${activity.label}')">
+                        <h3>${activity.label}</h3>
+                        <p>${activity.type || 'Activity'}</p>
+                        <span class="status ${isActive ? 'active' : 'inactive'}">
+                            ${isActive ? 'Active' : 'Inactive'}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function startActivity(activityId, activityName) {
+            if (activityId === currentActivityId) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/start_activity', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ activity_id: activityId })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                // Prevent auto-refresh from overwriting for 3 seconds while activity transitions
+                ignoreAutoRefreshUntil = Date.now() + 3000;
+
+                currentActivityId = activityId;
+                document.getElementById('currentActivity').textContent =
+                    `Current Activity: ${activityName}`;
+
+                if (activityId === '-1') {
+                    document.getElementById('controls').classList.remove('active');
+                } else {
+                    document.getElementById('controls').classList.add('active');
+                }
+
+                renderActivities();
+            } catch (error) {
+                showError('Failed to start activity: ' + error.message);
+            }
+        }
+
+        async function volumeControl(action) {
+            try {
+                const response = await fetch('/api/volume', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ action: action })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+            } catch (error) {
+                showError('Failed to control volume: ' + error.message);
+            }
+        }
+
+        async function powerOff() {
+            try {
+                const response = await fetch('/api/power_off', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                // Prevent auto-refresh from overwriting for 3 seconds while activity transitions
+                ignoreAutoRefreshUntil = Date.now() + 3000;
+
+                currentActivityId = '-1';
+                document.getElementById('currentActivity').textContent =
+                    'Current Activity: PowerOff';
+                document.getElementById('controls').classList.remove('active');
+                renderActivities();
+            } catch (error) {
+                showError('Failed to power off: ' + error.message);
+            }
+        }
+
+        // Initialize
+        fetchActivities();
+        fetchCurrentActivity();
+
+        // Auto-refresh current activity every 5 seconds
+        setInterval(fetchCurrentActivity, 5000);
+    </script>
+</body>
+</html>

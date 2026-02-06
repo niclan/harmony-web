@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  harmony-controller:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - HARMONY_IP=${HARMONY_IP:-192.168.1.123}
+    restart: unless-stopped
