@@ -93,7 +93,13 @@
         }
 
         .volume-controls button:active {
-            transform: translateY(0);
+            transform: translateY(0) scale(0.95);
+        }
+
+        .volume-controls button.processing {
+            opacity: 0.6;
+            transform: scale(0.95);
+            pointer-events: none;
         }
 
         .transport-controls {
@@ -122,7 +128,13 @@
         }
 
         .transport-controls button:active:not(:disabled) {
-            transform: translateY(0);
+            transform: translateY(0) scale(0.95);
+        }
+
+        .transport-controls button.processing {
+            opacity: 0.6;
+            transform: scale(0.95);
+            pointer-events: none;
         }
 
         .transport-controls button:disabled {
@@ -151,6 +163,16 @@
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
 
+        .power-off-btn:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .power-off-btn.processing {
+            opacity: 0.6;
+            transform: scale(0.98);
+            pointer-events: none;
+        }
+
         .activities {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -170,6 +192,17 @@
         .activity-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .activity-card:active {
+            transform: translateY(0) scale(0.98);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .activity-card.processing {
+            opacity: 0.7;
+            transform: scale(0.98);
+            pointer-events: none;
         }
 
         .activity-card.active {
@@ -240,16 +273,16 @@
         <div id="controls" class="controls">
             <h2>Active Controls</h2>
             <div class="transport-controls">
-                <button id="playBtn" onclick="transportControl('play')" disabled>Play</button>
-                <button id="pauseBtn" onclick="transportControl('pause')" disabled>Pause</button>
-                <button id="stopBtn" onclick="transportControl('stop')" disabled>Stop</button>
+                <button id="playBtn" onclick="transportControl('play', event)" disabled>Play</button>
+                <button id="pauseBtn" onclick="transportControl('pause', event)" disabled>Pause</button>
+                <button id="stopBtn" onclick="transportControl('stop', event)" disabled>Stop</button>
             </div>
             <div class="volume-controls">
-                <button onclick="volumeControl('up')">Volume Up</button>
-                <button onclick="volumeControl('down')">Volume Down</button>
-                <button onclick="volumeControl('mute')">Mute</button>
+                <button onclick="volumeControl('up', event)">Volume Up</button>
+                <button onclick="volumeControl('down', event)">Volume Down</button>
+                <button onclick="volumeControl('mute', event)">Mute</button>
             </div>
-            <button class="power-off-btn" onclick="powerOff()">Power Off</button>
+            <button class="power-off-btn" onclick="powerOff(event)">Power Off</button>
         </div>
 
         <div id="activities" class="loading">
@@ -359,7 +392,8 @@
 
                 return `
                     <div class="activity-card ${isActive ? 'active' : ''}"
-                         onclick="startActivity('${activity.id}', '${activity.label}')">
+                         id="activity-${activity.id}"
+                         onclick="startActivity('${activity.id}', '${activity.label}', event)">
                         <h3>${activity.label}</h3>
                         <p>${activity.type || 'Activity'}</p>
                         <span class="status ${isActive ? 'active' : 'inactive'}">
@@ -370,10 +404,13 @@
             }).join('');
         }
 
-        async function startActivity(activityId, activityName) {
+        async function startActivity(activityId, activityName, event) {
             if (activityId === currentActivityId) {
                 return;
             }
+
+            const cardElement = event.currentTarget;
+            cardElement.classList.add('processing');
 
             try {
                 const response = await fetch('/api/start_activity', {
@@ -408,10 +445,18 @@
                 renderActivities();
             } catch (error) {
                 showError('Failed to start activity: ' + error.message);
+            } finally {
+                // Remove processing state after a short delay
+                setTimeout(() => {
+                    cardElement.classList.remove('processing');
+                }, 300);
             }
         }
 
-        async function volumeControl(action) {
+        async function volumeControl(action, event) {
+            const buttonElement = event.currentTarget;
+            buttonElement.classList.add('processing');
+
             try {
                 const response = await fetch('/api/volume', {
                     method: 'POST',
@@ -429,10 +474,17 @@
                 }
             } catch (error) {
                 showError('Failed to control volume: ' + error.message);
+            } finally {
+                setTimeout(() => {
+                    buttonElement.classList.remove('processing');
+                }, 300);
             }
         }
 
-        async function powerOff() {
+        async function powerOff(event) {
+            const buttonElement = event.currentTarget;
+            buttonElement.classList.add('processing');
+
             try {
                 const response = await fetch('/api/power_off', {
                     method: 'POST',
@@ -458,6 +510,10 @@
                 renderActivities();
             } catch (error) {
                 showError('Failed to power off: ' + error.message);
+            } finally {
+                setTimeout(() => {
+                    buttonElement.classList.remove('processing');
+                }, 300);
             }
         }
 
@@ -489,7 +545,10 @@
             }
         }
 
-        async function transportControl(action) {
+        async function transportControl(action, event) {
+            const buttonElement = event.currentTarget;
+            buttonElement.classList.add('processing');
+
             try {
                 const response = await fetch('/api/transport', {
                     method: 'POST',
@@ -507,6 +566,10 @@
                 }
             } catch (error) {
                 showError('Failed to control transport: ' + error.message);
+            } finally {
+                setTimeout(() => {
+                    buttonElement.classList.remove('processing');
+                }, 300);
             }
         }
 
