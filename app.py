@@ -29,9 +29,11 @@ app = Flask(__name__)
 # Configuration
 HARMONY_IP = os.environ.get('HARMONY_IP', '192.168.1.123')
 URL_PREFIX = os.environ.get('URL_PREFIX', '').rstrip('/')
+PORT = int(os.environ.get('PORT', '5000'))
 logger.info(f"Using Harmony Hub IP: {HARMONY_IP}")
 if URL_PREFIX:
     logger.info(f"Using URL prefix: {URL_PREFIX}")
+logger.info(f"Listening on port: {PORT}")
 
 # Allowed domains for activity image downloads (Logitech/Harmony CDN only)
 ALLOWED_IMAGE_DOMAINS = {
@@ -535,4 +537,4 @@ app.register_blueprint(bp, url_prefix=URL_PREFIX if URL_PREFIX else None)
 if __name__ == '__main__':
     logger.info("Starting Harmony Hub Web Controller")
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 'yes')
-    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
+    app.run(host='0.0.0.0', port=PORT, debug=debug_mode)
