@@ -95,7 +95,7 @@ pip install -r requirements.txt
 
 All endpoints return JSON with `{'error': str}` on failure or appropriate success response.
 
-- `GET /api/activities` - List all available Harmony activities from hub config
+- `GET /api/activities` - List all available Harmony activities from hub config (excludes PowerOff activity - redundant with Power Off button)
 - `GET /api/current_activity` - Get current activity ID and name (returns tuple from `client.current_activity`)
 - `POST /api/start_activity` - Start activity by ID (requires `{"activity_id": str}`)
 - `POST /api/power_off` - Turn off all activities (activity ID -1)
