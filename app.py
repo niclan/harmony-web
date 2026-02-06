@@ -198,26 +198,33 @@ def volume_control():
         async def send_volume_command():
             client = await get_harmony_client()
 
-            # Find volume device from config
-            volume_device = None
-            volume_device_id = None
+            # Get current activity
+            current_activity_id, current_activity_name = client.current_activity
 
-            # Search in controlGroups for volume functions
-            control_groups = client.config.get('controlGroup', [])
-            for group in control_groups:
-                for func in group.get('function', []):
-                    func_name = func.get('name', '').lower()
-                    if 'volume' in func_name:
-                        volume_device_id = func.get('controlId')
-                        if volume_device_id:
-                            logger.debug(f"Found volume control device ID: {volume_device_id}")
-                            break
-                if volume_device_id:
+            if current_activity_id == '-1':
+                logger.warning("Cannot control volume when powered off")
+                raise ValueError("No activity is running")
+
+            # Find the current activity in config
+            activities = client.config.get('activity', [])
+            current_activity = None
+            for activity in activities:
+                if str(activity['id']) == str(current_activity_id):
+                    current_activity = activity
                     break
 
+            if not current_activity:
+                logger.warning(f"Current activity {current_activity_id} not found in config")
+                raise ValueError("Current activity not found")
+
+            # Get volume device ID from VolumeActivityRole
+            volume_device_id = current_activity.get('VolumeActivityRole')
+
             if not volume_device_id:
-                logger.warning("No volume device found in configuration")
-                raise ValueError("No volume device found")
+                logger.warning(f"No VolumeActivityRole found for activity {current_activity_name}")
+                raise ValueError("No volume device configured for this activity")
+
+            logger.debug(f"Found volume device ID: {volume_device_id} for activity {current_activity_name}")
 
             # Map action to command
             command_map = {
@@ -227,8 +234,13 @@ def volume_control():
             }
             command = command_map[action]
 
-            # Send command
-            await client.send_command(volume_device_id, command)
+            # Send command using SendCommandDevice
+            send_command = SendCommandDevice(
+                device=str(volume_device_id),
+                command=command,
+                delay=0
+            )
+            await client.send_commands(send_command)
             return True
 
         run_async(send_volume_command())
