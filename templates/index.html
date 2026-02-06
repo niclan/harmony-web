@@ -40,26 +40,19 @@
 
         .controls {
             background: white;
-            padding: 0;
+            padding: 20px;
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
-            max-height: 0;
-            overflow: hidden;
-            opacity: 0;
-            transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease, margin-bottom 0.3s ease;
+            transition: opacity 0.3s ease;
         }
 
-        .controls.active {
-            max-height: 500px;
-            opacity: 1;
-            padding: 20px;
+        .controls:not(.active) {
+            opacity: 0.4;
         }
 
-        .controls h2 {
-            color: #333;
-            font-size: 20px;
-            margin-bottom: 15px;
+        .controls:not(.active) button {
+            cursor: not-allowed;
         }
 
         .volume-controls {
@@ -95,6 +88,17 @@
             opacity: 0.6;
             transform: scale(0.95);
             pointer-events: none;
+        }
+
+        .volume-controls button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #999;
+        }
+
+        .volume-controls button:disabled:hover {
+            transform: none;
+            box-shadow: none;
         }
 
         .transport-controls {
@@ -166,6 +170,17 @@
             opacity: 0.6;
             transform: scale(0.98);
             pointer-events: none;
+        }
+
+        .power-off-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #999;
+        }
+
+        .power-off-btn:disabled:hover {
+            transform: none;
+            box-shadow: none;
         }
 
         .activities {
@@ -270,7 +285,6 @@
         <div id="error" class="error"></div>
 
         <div id="controls" class="controls">
-            <h2>Active Controls</h2>
             <div class="transport-controls">
                 <button id="playBtn" onclick="transportControl('play', event)" disabled>▶️ Play</button>
                 <button id="pauseBtn" onclick="transportControl('pause', event)" disabled>⏸️ Pause</button>
@@ -352,19 +366,21 @@
                     renderActivities();
                 }
 
-                // Update controls visibility based on current state (outside the change check)
+                // Update controls state based on current activity
                 const controlsDiv = document.getElementById('controls');
-                const shouldShowControls = !isPowerOff;
-                const isShowingControls = controlsDiv.classList.contains('active');
+                const shouldEnableControls = !isPowerOff;
 
-                if (shouldShowControls && !isShowingControls) {
+                if (shouldEnableControls) {
                     controlsDiv.classList.add('active');
                     fetchTransportControls();
-                } else if (!shouldShowControls && isShowingControls) {
+                    // Enable volume and power-off buttons
+                    document.querySelectorAll('.volume-controls button').forEach(btn => btn.disabled = false);
+                    document.querySelector('.power-off-btn').disabled = false;
+                } else {
                     controlsDiv.classList.remove('active');
-                } else if (shouldShowControls) {
-                    // Controls already showing, update transport buttons
-                    fetchTransportControls();
+                    // Disable all control buttons when powered off
+                    document.querySelectorAll('.volume-controls button').forEach(btn => btn.disabled = true);
+                    document.querySelector('.power-off-btn').disabled = true;
                 }
             } catch (error) {
                 showError('Failed to fetch current activity: ' + error.message);
@@ -444,8 +460,12 @@
 
                 if (activityId === '-1') {
                     document.getElementById('controls').classList.remove('active');
+                    document.querySelectorAll('.volume-controls button').forEach(btn => btn.disabled = true);
+                    document.querySelector('.power-off-btn').disabled = true;
                 } else {
                     document.getElementById('controls').classList.add('active');
+                    document.querySelectorAll('.volume-controls button').forEach(btn => btn.disabled = false);
+                    document.querySelector('.power-off-btn').disabled = false;
                     fetchTransportControls();
                 }
 
@@ -512,6 +532,8 @@
 
                 currentActivityId = '-1';
                 document.getElementById('controls').classList.remove('active');
+                document.querySelectorAll('.volume-controls button').forEach(btn => btn.disabled = true);
+                document.querySelector('.power-off-btn').disabled = true;
                 renderActivities();
             } catch (error) {
                 showError('Failed to power off: ' + error.message);
