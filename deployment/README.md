@@ -67,6 +67,33 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+### 5. Configure Ingress Nginx (if applicable)
+
+If you have an ingress nginx that proxies to this server, configure it to pass the client IP:
+
+```nginx
+# Ingress nginx configuration
+# Add to your main ingress nginx server block
+
+location /harmony {
+    # Proxy to harmony-web server
+    # Replace with your harmony-web server IP/hostname
+    proxy_pass http://192.168.1.100;
+
+    # Preserve original client IP (REQUIRED for IP restrictions)
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Connection handling
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+}
+```
+
+**Important:** The `X-Forwarded-For` header is required if you want to restrict access by client IP (see Optional Security Configuration below).
+
 ## Verification
 
 Access the application at: `http://your-server/harmony`
