@@ -43,7 +43,7 @@ docker run -d -p 5000:5000 -e HARMONY_IP="192.168.1.123" harmony-controller
 # Install dependencies
 pip install -r requirements.txt
 
-# Dependencies: Flask 3.1.2, aioharmony 0.5.3, requests 2.32.5
+# Dependencies: Flask 3.1.2, aioharmony 0.5.3, requests 2.32.5, gunicorn 21.2.0
 ```
 
 ## Architecture
@@ -51,6 +51,11 @@ pip install -r requirements.txt
 ### Core Components
 
 **app.py** - Main Flask application with the following architecture:
+
+- **Blueprint Pattern**: All routes registered via Flask Blueprint for URL prefix support
+  - Blueprint named 'harmony' contains all route handlers
+  - Registered with configurable `url_prefix` from `URL_PREFIX` environment variable
+  - Enables deployment at subpaths (e.g., `/harmony/*`) behind reverse proxy
 
 - **Async-Sync Bridge Pattern**: Flask (synchronous) wraps aioharmony (asynchronous) using `run_async()` helper
   - Maintains a persistent event loop in a background thread
@@ -134,11 +139,20 @@ All endpoints return JSON with `{'error': str}` on failure or appropriate succes
 
 Environment variables:
 - `HARMONY_IP` - Harmony Hub IP address (default: "192.168.1.123")
+- `URL_PREFIX` - URL prefix for reverse proxy deployment (default: empty, example: "/harmony")
 - `FLASK_DEBUG` - Enable Flask debug mode (default: "False", accepts: "true", "1", "yes")
 
-Set via export, .env file, or Docker environment.
+Set via export, .env file, Docker environment, or systemd service file.
 
-**Production Deployment:** Keep `FLASK_DEBUG=False` (default) to disable debug mode and Flask debugger.
+**URL Prefix Support:**
+All routes are registered via Flask Blueprint with configurable `url_prefix`. This allows the app to run behind nginx reverse proxy at a subpath (e.g., `/harmony`). When `URL_PREFIX` is set, all endpoints are prefixed (e.g., `/harmony/api/activities`).
+
+**Production Deployment:**
+- Keep `FLASK_DEBUG=False` (default) to disable debug mode
+- See `deployment/` directory for nginx config and systemd service files
+- Runs via gunicorn WSGI server (not Flask's built-in server)
+- systemd service manages gunicorn process
+- nginx reverse proxies external requests to gunicorn
 
 ### Harmony Hub Communication
 

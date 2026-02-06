@@ -56,7 +56,22 @@ docker-compose up -d
 
 ## Configuration
 
-Set the `HARMONY_IP` environment variable to your Harmony Hub's IP address. Default is `192.168.1.123`.
+Environment variables:
+- `HARMONY_IP` - Harmony Hub IP address (default: `192.168.1.123`)
+- `URL_PREFIX` - URL prefix for reverse proxy deployment (default: none, example: `/harmony`)
+- `FLASK_DEBUG` - Enable debug mode (default: `False`)
+
+### Production Deployment with nginx
+
+See [deployment/README.md](deployment/README.md) for detailed instructions on deploying with nginx reverse proxy and systemd.
+
+Quick example:
+```bash
+# Run with URL prefix
+export URL_PREFIX="/harmony"
+export HARMONY_IP="192.168.1.123"
+python app.py
+```
 
 ## API Endpoints
 

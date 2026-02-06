@@ -10,7 +10,7 @@ import logging
 import threading
 from pathlib import Path
 from urllib.parse import urlparse
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, Blueprint, render_template, jsonify, request
 from aioharmony.harmonyapi import HarmonyAPI, SendCommandDevice
 import requests
 
@@ -28,7 +28,12 @@ app = Flask(__name__)
 
 # Configuration
 HARMONY_IP = os.environ.get('HARMONY_IP', '192.168.1.123')
+URL_PREFIX = os.environ.get('URL_PREFIX', '').rstrip('/')
+PORT = int(os.environ.get('PORT', '5000'))
 logger.info(f"Using Harmony Hub IP: {HARMONY_IP}")
+if URL_PREFIX:
+    logger.info(f"Using URL prefix: {URL_PREFIX}")
+logger.info(f"Listening on port: {PORT}")
 
 # Allowed domains for activity image downloads (Logitech/Harmony CDN only)
 ALLOWED_IMAGE_DOMAINS = {
@@ -175,13 +180,17 @@ def cache_activity_image(activity_id, base_uri, image_key):
         return None
 
 
-@app.route('/')
+# Create blueprint for all routes
+bp = Blueprint('harmony', __name__)
+
+
+@bp.route('/')
 def index():
     """Serve the main web interface."""
     return render_template('index.html')
 
 
-@app.route('/api/activities', methods=['GET'])
+@bp.route('/api/activities', methods=['GET'])
 def get_activities():
     """Get list of all available Harmony activities."""
     try:
@@ -213,7 +222,7 @@ def get_activities():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/current_activity', methods=['GET'])
+@bp.route('/api/current_activity', methods=['GET'])
 def get_current_activity():
     """Get the current activity."""
     try:
@@ -238,7 +247,7 @@ def get_current_activity():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/start_activity', methods=['POST'])
+@bp.route('/api/start_activity', methods=['POST'])
 def start_activity():
     """Start a specific activity by ID."""
     try:
@@ -275,7 +284,7 @@ def start_activity():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/power_off', methods=['POST'])
+@bp.route('/api/power_off', methods=['POST'])
 def power_off():
     """Power off all activities."""
     try:
@@ -296,7 +305,7 @@ def power_off():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/volume', methods=['POST'])
+@bp.route('/api/volume', methods=['POST'])
 def volume_control():
     """Control volume (up/down/mute)."""
     try:
@@ -371,7 +380,7 @@ def volume_control():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/transport_controls', methods=['GET'])
+@bp.route('/api/transport_controls', methods=['GET'])
 def get_transport_controls():
     """Get available transport controls for current activity."""
     try:
@@ -423,7 +432,7 @@ def get_transport_controls():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/transport', methods=['POST'])
+@bp.route('/api/transport', methods=['POST'])
 def transport_control():
     """Control media transport (play/pause/stop)."""
     try:
@@ -501,7 +510,7 @@ def transport_control():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/devices', methods=['GET'])
+@bp.route('/api/devices', methods=['GET'])
 def get_devices():
     """Get list of all devices."""
     try:
@@ -521,7 +530,11 @@ def get_devices():
         return jsonify({'error': str(e)}), 500
 
 
+# Register blueprint with URL prefix
+app.register_blueprint(bp, url_prefix=URL_PREFIX if URL_PREFIX else None)
+
+
 if __name__ == '__main__':
     logger.info("Starting Harmony Hub Web Controller")
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 'yes')
-    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
+    app.run(host='0.0.0.0', port=PORT, debug=debug_mode)
