@@ -58,9 +58,8 @@ rsync -av --delete \
     --exclude='static/images/activities/*' \
     "$SOURCE_DIR/" "$DEPLOY_PATH/"
 
-# Preserve .gitkeep
+# Ensure image cache directory exists
 mkdir -p "$DEPLOY_PATH/static/images/activities"
-touch "$DEPLOY_PATH/static/images/activities/.gitkeep"
 
 # Step 3: Set up virtual environment
 if [ "$SKIP_DEPS" = false ]; then
@@ -109,26 +108,20 @@ fi
 
 # Step 7: Install nginx config (if not exists)
 echo -e "${GREEN}[8/8] Checking nginx configuration...${NC}"
-NGINX_AVAILABLE="/etc/nginx/sites-available/harmony"
-NGINX_ENABLED="/etc/nginx/sites-enabled/harmony"
+NGINX_CONF="/etc/nginx/conf.d/harmony.conf"
 
-if [ -d "/etc/nginx/sites-available" ]; then
-    if [ ! -f "$NGINX_AVAILABLE" ]; then
+if [ -d "/etc/nginx/conf.d" ]; then
+    if [ ! -f "$NGINX_CONF" ]; then
         echo "Installing nginx config..."
-        cp "$DEPLOY_PATH/deployment/nginx-harmony.conf" "$NGINX_AVAILABLE"
-
-        if [ ! -e "$NGINX_ENABLED" ]; then
-            ln -s "$NGINX_AVAILABLE" "$NGINX_ENABLED"
-            echo "Nginx site enabled"
-        fi
-
+        cp "$DEPLOY_PATH/deployment/nginx-harmony.conf" "$NGINX_CONF"
+        echo "Nginx config installed to $NGINX_CONF"
         echo -e "${YELLOW}Remember to reload nginx: sudo systemctl reload nginx${NC}"
     else
         echo "Nginx config already exists (not overwriting)"
-        echo -e "${YELLOW}To update: sudo cp $DEPLOY_PATH/deployment/nginx-harmony.conf $NGINX_AVAILABLE${NC}"
+        echo -e "${YELLOW}To update: sudo cp $DEPLOY_PATH/deployment/nginx-harmony.conf $NGINX_CONF${NC}"
     fi
 else
-    echo -e "${YELLOW}Warning: /etc/nginx/sites-available not found. Install nginx config manually.${NC}"
+    echo -e "${YELLOW}Warning: /etc/nginx/conf.d not found. Install nginx config manually.${NC}"
 fi
 
 echo ""

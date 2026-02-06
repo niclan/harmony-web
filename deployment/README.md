@@ -57,11 +57,8 @@ sudo systemctl status harmony-web
 ### 4. Configure nginx
 
 ```bash
-# Copy nginx config
-sudo cp /opt/harmony-web/deployment/nginx-harmony.conf /etc/nginx/sites-available/harmony
-
-# Create symlink to enable
-sudo ln -s /etc/nginx/sites-available/harmony /etc/nginx/sites-enabled/
+# Copy nginx config to conf.d
+sudo cp /var/lib/harmony-web/deployment/nginx-harmony.conf /etc/nginx/conf.d/harmony.conf
 
 # Test nginx configuration
 sudo nginx -t
