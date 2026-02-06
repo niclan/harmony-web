@@ -280,18 +280,22 @@ def get_transport_controls():
             if not current_activity:
                 return {'available': False, 'controls': []}
 
-            # Check controlGroups for transport controls
-            available_controls = []
-            for group in current_activity.get('controlGroup', []):
-                for func in group.get('function', []):
-                    name = func.get('name', '')
-                    if name in ['Play', 'Pause', 'Stop', 'PlayPause']:
-                        available_controls.append(name.lower())
+            # Check if activity has PassThroughActivityRole (for media transport)
+            # This matches the logic used in the actual transport control function
+            roles = current_activity.get('roles', {})
+            has_transport = 'PassThroughActivityRole' in roles
 
-            return {
-                'available': len(available_controls) > 0,
-                'controls': list(set(available_controls))
-            }
+            if has_transport:
+                # If PassThroughActivityRole exists, assume standard transport controls
+                return {
+                    'available': True,
+                    'controls': ['play', 'pause', 'stop']
+                }
+            else:
+                return {
+                    'available': False,
+                    'controls': []
+                }
 
         result = run_async(check_transport())
         logger.debug(f"Transport controls: {result}")
