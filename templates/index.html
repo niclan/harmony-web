@@ -37,12 +37,6 @@
             margin-bottom: 10px;
         }
 
-        #currentActivity {
-            color: #667eea;
-            font-size: 18px;
-            font-weight: 600;
-        }
-
         .controls {
             background: white;
             padding: 0;
@@ -270,7 +264,6 @@
     <div class="container">
         <header>
             <h1>Logitech Harmony Hub Controller</h1>
-            <div id="currentActivity">Loading...</div>
         </header>
 
         <div id="error" class="error"></div>
@@ -353,11 +346,6 @@
                 if (newActivityId !== String(currentActivityId)) {
                     previousActivityId = currentActivityId;
                     currentActivityId = newActivityId;
-
-                    const currentDiv = document.getElementById('currentActivity');
-                    currentDiv.textContent = isPowerOff ?
-                        'Current Activity: PowerOff' :
-                        `Current Activity: ${data.activity_name}`;
 
                     // Only re-render activities if activity changed
                     renderActivities();
@@ -452,8 +440,6 @@
                 ignoreAutoRefreshUntil = Date.now() + 3000;
 
                 currentActivityId = activityId;
-                document.getElementById('currentActivity').textContent =
-                    `Current Activity: ${activityName}`;
 
                 if (activityId === '-1') {
                     document.getElementById('controls').classList.remove('active');
@@ -524,8 +510,6 @@
                 ignoreAutoRefreshUntil = Date.now() + 3000;
 
                 currentActivityId = '-1';
-                document.getElementById('currentActivity').textContent =
-                    'Current Activity: PowerOff';
                 document.getElementById('controls').classList.remove('active');
                 renderActivities();
             } catch (error) {
