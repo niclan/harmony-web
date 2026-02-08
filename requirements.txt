@@ -1,4 +1,4 @@
 Flask==3.1.2
 aioharmony==0.5.3
 requests==2.32.5
-gunicorn==21.2.0
+gunicorn==23.0.0
