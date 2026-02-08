@@ -52,15 +52,18 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 8px 12px;
+            padding: 10px 14px;
             font-size: 11px;
             font-weight: 600;
             gap: 4px;
             min-width: 60px;
+            overflow: visible;
         }
 
         .header-power-btn .emoji {
             font-size: 20px;
+            line-height: 1;
+            display: block;
         }
 
         .header-power-btn:hover:not(:disabled) {
@@ -132,22 +135,6 @@
             .controls-grid {
                 gap: 8px;
             }
-        }
-
-            header {
-                flex-direction: column;
-                gap: 15px;
-            }
-
-            h1 {
-                font-size: 22px;
-                order: -1;
-            }
-
-            .header-power-btn {
-                width: 100%;
-                padding: 12px;
-            }
 
             .controls button {
                 padding: 25px 15px;
@@ -156,6 +143,7 @@
 
             .controls button .emoji {
                 font-size: 32px;
+                display: block;
             }
         }
 
@@ -177,6 +165,13 @@
 
         .controls button .emoji {
             font-size: 28px;
+            display: block;
+            line-height: 1;
+        }
+
+        .controls button span:not(.emoji) {
+            display: block;
+            line-height: 1.2;
         }
 
         .volume-controls {
@@ -231,6 +226,39 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
             gap: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .activities {
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                gap: 12px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .activities {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                gap: 10px;
+            }
+
+            .activity-card {
+                padding: 15px;
+            }
+
+            .activity-image,
+            .activity-icon-fallback {
+                width: 60px;
+                height: 60px;
+                margin-bottom: 10px;
+            }
+
+            .activity-icon-fallback {
+                font-size: 36px;
+            }
+
+            .activity-card h3 {
+                font-size: 14px;
+            }
         }
 
         .activity-card {
@@ -324,7 +352,7 @@
     <div class="container">
         <header>
             <button id="headerPowerBtn" class="header-power-btn" onclick="powerOff(event)">
-                <span class="emoji">⏻</span>
+                <span class="emoji" id="powerEmoji">⚫</span>
                 <span>Power</span>
             </button>
             <h1>Logitech Harmony Hub Controller</h1>
@@ -372,8 +400,6 @@
         let activities = [];
         let lastActivityChangeTime = 0;
         let ignoreAutoRefreshUntil = 0;
-        let currentActivityName = null;
-        let transportControlsAvailable = false;
 
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -432,7 +458,6 @@
                 if (newActivityId !== String(currentActivityId)) {
                     previousActivityId = currentActivityId;
                     currentActivityId = newActivityId;
-                    currentActivityName = data.activity_name;
 
                     // Only re-render activities if activity changed
                     renderActivities();
@@ -448,13 +473,13 @@
                     // Enable volume and power-off buttons
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = false);
                     document.getElementById('headerPowerBtn').disabled = false;
+                    document.getElementById('powerEmoji').textContent = '🟢';
                 } else {
                     controlsDiv.classList.remove('active');
                     // Disable all control buttons when powered off
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
                     document.getElementById('headerPowerBtn').disabled = true;
-                    // Clear media session when powered off
-                    updateMediaSession(false);
+                    document.getElementById('powerEmoji').textContent = '⚫';
                 }
             } catch (error) {
                 showError('Failed to fetch current activity: ' + error.message);
@@ -531,17 +556,17 @@
                 ignoreAutoRefreshUntil = Date.now() + 3000;
 
                 currentActivityId = activityId;
-                currentActivityName = activityName;
 
                 if (activityId === '-1') {
                     document.getElementById('controls').classList.remove('active');
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
                     document.getElementById('headerPowerBtn').disabled = true;
-                    updateMediaSession(false);
+                    document.getElementById('powerEmoji').textContent = '⚫';
                 } else {
                     document.getElementById('controls').classList.add('active');
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = false);
                     document.getElementById('headerPowerBtn').disabled = false;
+                    document.getElementById('powerEmoji').textContent = '🟢';
                     fetchTransportControls();
                 }
 
@@ -616,6 +641,7 @@
                 document.getElementById('controls').classList.remove('active');
                 document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
                 document.getElementById('headerPowerBtn').disabled = true;
+                document.getElementById('powerEmoji').textContent = '⚫';
                 renderActivities();
             } catch (error) {
                 showError('Failed to power off: ' + error.message);
@@ -638,8 +664,6 @@
                     document.getElementById('playBtn').disabled = true;
                     document.getElementById('pauseBtn').disabled = true;
                     document.getElementById('stopBtn').disabled = true;
-                    transportControlsAvailable = false;
-                    updateMediaSession(false);
                     return;
                 }
 
@@ -649,17 +673,12 @@
                 document.getElementById('pauseBtn').disabled = !controls.includes('pause');
                 document.getElementById('stopBtn').disabled = !controls.includes('stop');
 
-                transportControlsAvailable = controls.length > 0;
-                updateMediaSession(transportControlsAvailable);
-
             } catch (error) {
                 console.error('Failed to fetch transport controls:', error);
                 // Disable all buttons on error
                 document.getElementById('playBtn').disabled = true;
                 document.getElementById('pauseBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = true;
-                transportControlsAvailable = false;
-                updateMediaSession(false);
             }
         }
 
@@ -693,51 +712,6 @@
                     }, 300);
                 }
             }
-        }
-
-        function updateMediaSession(hasTransportControls) {
-            // Check if Media Session API is available
-            if (!('mediaSession' in navigator)) {
-                return;
-            }
-
-            if (!hasTransportControls || !currentActivityName) {
-                // Clear media session
-                navigator.mediaSession.metadata = null;
-                navigator.mediaSession.setActionHandler('play', null);
-                navigator.mediaSession.setActionHandler('pause', null);
-                navigator.mediaSession.setActionHandler('stop', null);
-                return;
-            }
-
-            // Set metadata for lock screen display
-            navigator.mediaSession.metadata = new MediaMetadata({
-                title: currentActivityName,
-                artist: 'Harmony Hub Controller',
-                album: 'Now Playing'
-            });
-
-            // Set up action handlers
-            navigator.mediaSession.setActionHandler('play', () => {
-                if (!document.getElementById('playBtn').disabled) {
-                    transportControl('play', null);
-                }
-            });
-
-            navigator.mediaSession.setActionHandler('pause', () => {
-                if (!document.getElementById('pauseBtn').disabled) {
-                    transportControl('pause', null);
-                }
-            });
-
-            navigator.mediaSession.setActionHandler('stop', () => {
-                if (!document.getElementById('stopBtn').disabled) {
-                    transportControl('stop', null);
-                }
-            });
-
-            // Set playback state to playing (shows controls)
-            navigator.mediaSession.playbackState = 'playing';
         }
 
         // Keyboard shortcuts
