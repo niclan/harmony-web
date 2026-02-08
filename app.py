@@ -76,33 +76,17 @@ def run_async(coro):
             raise RuntimeError("Background event loop failed to start")
 
     future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result(timeout=30)
+    return future.result(timeout=60)
 
 
 async def get_harmony_client():
     """
     Get or create the global Harmony client.
-    Automatically reconnects if connection is lost.
+    Reuses existing connection unless creation is needed.
     """
     global harmony_client
 
-    # Check if we need to create a new client or reconnect
-    needs_connection = harmony_client is None
-
-    if harmony_client is not None:
-        # Test if connection is still alive by checking if we can get config
-        try:
-            # Simple connection health check - if config is empty, connection is dead
-            if not harmony_client.config:
-                logger.warning("Harmony Hub connection lost, reconnecting...")
-                harmony_client = None
-                needs_connection = True
-        except Exception:
-            logger.warning("Harmony Hub connection appears dead, reconnecting...")
-            harmony_client = None
-            needs_connection = True
-
-    if needs_connection:
+    if harmony_client is None:
         logger.debug(f"Creating new Harmony client for {HARMONY_IP}")
         harmony_client = HarmonyAPI(ip_address=HARMONY_IP)
 
