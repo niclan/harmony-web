@@ -112,16 +112,27 @@
             gap: 10px;
         }
 
-        @media (max-width: 768px) {
+        @media (max-width: 900px) {
             .controls-grid {
                 grid-template-columns: repeat(3, 1fr);
             }
         }
 
-        @media (max-width: 480px) {
+        @media (max-width: 600px) {
             .controls-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
+        }
+
+        @media (max-width: 480px) {
+            .controls {
+                padding: 15px;
+            }
+
+            .controls-grid {
+                gap: 8px;
+            }
+        }
 
             header {
                 flex-direction: column;
@@ -190,7 +201,7 @@
 
         .transport-controls:disabled {
             background: #cccccc;
-            color: #888888;
+            color: #000000;
             cursor: not-allowed;
             opacity: 0.6;
         }
