@@ -325,6 +325,8 @@
         let activities = [];
         let lastActivityChangeTime = 0;
         let ignoreAutoRefreshUntil = 0;
+        let currentActivityName = null;
+        let transportControlsAvailable = false;
 
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -383,6 +385,7 @@
                 if (newActivityId !== String(currentActivityId)) {
                     previousActivityId = currentActivityId;
                     currentActivityId = newActivityId;
+                    currentActivityName = data.activity_name;
 
                     // Only re-render activities if activity changed
                     renderActivities();
@@ -403,6 +406,8 @@
                     // Disable all control buttons when powered off
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
                     document.getElementById('headerPowerBtn').disabled = true;
+                    // Clear media session when powered off
+                    updateMediaSession(false);
                 }
             } catch (error) {
                 showError('Failed to fetch current activity: ' + error.message);
@@ -479,11 +484,13 @@
                 ignoreAutoRefreshUntil = Date.now() + 3000;
 
                 currentActivityId = activityId;
+                currentActivityName = activityName;
 
                 if (activityId === '-1') {
                     document.getElementById('controls').classList.remove('active');
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
                     document.getElementById('headerPowerBtn').disabled = true;
+                    updateMediaSession(false);
                 } else {
                     document.getElementById('controls').classList.add('active');
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = false);
@@ -576,6 +583,8 @@
                     document.getElementById('playBtn').disabled = true;
                     document.getElementById('pauseBtn').disabled = true;
                     document.getElementById('stopBtn').disabled = true;
+                    transportControlsAvailable = false;
+                    updateMediaSession(false);
                     return;
                 }
 
@@ -585,18 +594,25 @@
                 document.getElementById('pauseBtn').disabled = !controls.includes('pause');
                 document.getElementById('stopBtn').disabled = !controls.includes('stop');
 
+                transportControlsAvailable = controls.length > 0;
+                updateMediaSession(transportControlsAvailable);
+
             } catch (error) {
                 console.error('Failed to fetch transport controls:', error);
                 // Disable all buttons on error
                 document.getElementById('playBtn').disabled = true;
                 document.getElementById('pauseBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = true;
+                transportControlsAvailable = false;
+                updateMediaSession(false);
             }
         }
 
         async function transportControl(action, event) {
-            const buttonElement = event.currentTarget;
-            buttonElement.classList.add('processing');
+            const buttonElement = event ? event.currentTarget : null;
+            if (buttonElement) {
+                buttonElement.classList.add('processing');
+            }
 
             try {
                 const response = await fetch('/api/transport', {
@@ -616,10 +632,57 @@
             } catch (error) {
                 showError('Failed to control transport: ' + error.message);
             } finally {
-                setTimeout(() => {
-                    buttonElement.classList.remove('processing');
-                }, 300);
+                if (buttonElement) {
+                    setTimeout(() => {
+                        buttonElement.classList.remove('processing');
+                    }, 300);
+                }
             }
+        }
+
+        function updateMediaSession(hasTransportControls) {
+            // Check if Media Session API is available
+            if (!('mediaSession' in navigator)) {
+                return;
+            }
+
+            if (!hasTransportControls || !currentActivityName) {
+                // Clear media session
+                navigator.mediaSession.metadata = null;
+                navigator.mediaSession.setActionHandler('play', null);
+                navigator.mediaSession.setActionHandler('pause', null);
+                navigator.mediaSession.setActionHandler('stop', null);
+                return;
+            }
+
+            // Set metadata for lock screen display
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: currentActivityName,
+                artist: 'Harmony Hub Controller',
+                album: 'Now Playing'
+            });
+
+            // Set up action handlers
+            navigator.mediaSession.setActionHandler('play', () => {
+                if (!document.getElementById('playBtn').disabled) {
+                    transportControl('play', null);
+                }
+            });
+
+            navigator.mediaSession.setActionHandler('pause', () => {
+                if (!document.getElementById('pauseBtn').disabled) {
+                    transportControl('pause', null);
+                }
+            });
+
+            navigator.mediaSession.setActionHandler('stop', () => {
+                if (!document.getElementById('stopBtn').disabled) {
+                    transportControl('stop', null);
+                }
+            });
+
+            // Set playback state to playing (shows controls)
+            navigator.mediaSession.playbackState = 'playing';
         }
 
         // Initialize
