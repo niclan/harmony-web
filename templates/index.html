@@ -112,6 +112,42 @@
             gap: 10px;
         }
 
+        @media (max-width: 768px) {
+            .controls-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .controls-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            header {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            h1 {
+                font-size: 22px;
+                order: -1;
+            }
+
+            .header-power-btn {
+                width: 100%;
+                padding: 12px;
+            }
+
+            .controls button {
+                padding: 25px 15px;
+                min-height: 90px;
+            }
+
+            .controls button .emoji {
+                font-size: 32px;
+            }
+        }
+
         .controls button {
             padding: 20px 10px;
             font-size: 14px;
@@ -510,8 +546,10 @@
         }
 
         async function volumeControl(action, event) {
-            const buttonElement = event.currentTarget;
-            buttonElement.classList.add('processing');
+            const buttonElement = event ? event.currentTarget : null;
+            if (buttonElement) {
+                buttonElement.classList.add('processing');
+            }
 
             try {
                 const response = await fetch('/api/volume', {
@@ -531,15 +569,19 @@
             } catch (error) {
                 showError('Failed to control volume: ' + error.message);
             } finally {
-                setTimeout(() => {
-                    buttonElement.classList.remove('processing');
-                }, 300);
+                if (buttonElement) {
+                    setTimeout(() => {
+                        buttonElement.classList.remove('processing');
+                    }, 300);
+                }
             }
         }
 
         async function powerOff(event) {
-            const buttonElement = event.currentTarget;
-            buttonElement.classList.add('processing');
+            const buttonElement = event ? event.currentTarget : null;
+            if (buttonElement) {
+                buttonElement.classList.add('processing');
+            }
 
             try {
                 const response = await fetch('/api/power_off', {
@@ -567,9 +609,11 @@
             } catch (error) {
                 showError('Failed to power off: ' + error.message);
             } finally {
-                setTimeout(() => {
-                    buttonElement.classList.remove('processing');
-                }, 300);
+                if (buttonElement) {
+                    setTimeout(() => {
+                        buttonElement.classList.remove('processing');
+                    }, 300);
+                }
             }
         }
 
@@ -684,6 +728,83 @@
             // Set playback state to playing (shows controls)
             navigator.mediaSession.playbackState = 'playing';
         }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (event) => {
+            // Don't trigger shortcuts if user is typing in an input field
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+                return;
+            }
+
+            // Prevent default for handled keys
+            const handledKeys = ['Space', 'ArrowUp', 'ArrowDown'];
+            if (handledKeys.includes(event.code)) {
+                event.preventDefault();
+            }
+
+            const isPowerOff = currentActivityId === '-1';
+
+            switch(event.code) {
+                case 'Space':
+                    // Space: toggle play/pause
+                    if (!isPowerOff && transportControlsAvailable) {
+                        const playBtn = document.getElementById('playBtn');
+                        const pauseBtn = document.getElementById('pauseBtn');
+                        if (!pauseBtn.disabled) {
+                            transportControl('pause', null);
+                        } else if (!playBtn.disabled) {
+                            transportControl('play', null);
+                        }
+                    }
+                    break;
+
+                case 'KeyP':
+                    // P: play
+                    if (!isPowerOff && !document.getElementById('playBtn').disabled) {
+                        transportControl('play', null);
+                    }
+                    break;
+
+                case 'KeyS':
+                    // S: stop
+                    if (!isPowerOff && !document.getElementById('stopBtn').disabled) {
+                        transportControl('stop', null);
+                    }
+                    break;
+
+                case 'KeyM':
+                    // M: mute
+                    if (!isPowerOff) {
+                        const muteBtn = document.querySelector('.volume-controls:last-child');
+                        if (!muteBtn.disabled) {
+                            volumeControl('mute', null);
+                        }
+                    }
+                    break;
+
+                case 'ArrowUp':
+                    // Arrow Up: volume up
+                    if (!isPowerOff) {
+                        volumeControl('up', null);
+                    }
+                    break;
+
+                case 'ArrowDown':
+                    // Arrow Down: volume down
+                    if (!isPowerOff) {
+                        volumeControl('down', null);
+                    }
+                    break;
+
+                case 'KeyQ':
+                case 'Escape':
+                    // Q or Escape: power off
+                    if (!isPowerOff) {
+                        powerOff(null);
+                    }
+                    break;
+            }
+        });
 
         // Initialize
         fetchActivities();
