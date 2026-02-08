@@ -349,6 +349,9 @@
     </style>
 </head>
 <body>
+    <!-- Silent audio element for Media Session API -->
+    <audio id="silentAudio" loop></audio>
+
     <div class="container">
         <header>
             <button id="headerPowerBtn" class="header-power-btn" onclick="powerOff(event)">
@@ -400,6 +403,124 @@
         let activities = [];
         let lastActivityChangeTime = 0;
         let ignoreAutoRefreshUntil = 0;
+        let currentActivityName = null;
+        let silentAudioInitialized = false;
+
+        // Initialize silent audio for Media Session API
+        function initializeSilentAudio() {
+            if (silentAudioInitialized) return;
+
+            try {
+                // Create silent audio using Web Audio API
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                const destination = audioContext.createMediaStreamDestination();
+
+                // Set to very low volume (nearly silent)
+                gainNode.gain.value = 0.01;
+
+                // Connect: oscillator -> gain -> destination
+                oscillator.connect(gainNode);
+                gainNode.connect(destination);
+
+                // Use the stream as audio source
+                const audio = document.getElementById('silentAudio');
+                audio.srcObject = destination.stream;
+                audio.volume = 0.01;
+
+                // Start the oscillator
+                oscillator.start();
+
+                silentAudioInitialized = true;
+                console.log('Silent audio initialized for Media Session API');
+            } catch (error) {
+                console.error('Failed to initialize silent audio:', error);
+            }
+        }
+
+        // Start silent audio playback (requires user gesture)
+        async function startSilentAudio() {
+            const audio = document.getElementById('silentAudio');
+            try {
+                await audio.play();
+                console.log('Silent audio playing');
+                return true;
+            } catch (error) {
+                console.error('Failed to play silent audio:', error);
+                return false;
+            }
+        }
+
+        // Stop silent audio playback
+        function stopSilentAudio() {
+            const audio = document.getElementById('silentAudio');
+            audio.pause();
+            console.log('Silent audio stopped');
+        }
+
+        // Update Media Session API with current activity
+        function updateMediaSession(activityName, hasTransportControls) {
+            if (!('mediaSession' in navigator)) {
+                console.log('Media Session API not available');
+                return;
+            }
+
+            if (!activityName || activityName === 'PowerOff') {
+                // Clear media session
+                console.log('Clearing media session');
+                stopSilentAudio();
+                navigator.mediaSession.metadata = null;
+                navigator.mediaSession.playbackState = 'none';
+                return;
+            }
+
+            console.log('Setting up Media Session for:', activityName);
+
+            // Set metadata for lock screen display
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: activityName,
+                artist: 'Harmony Hub Controller',
+                album: 'Now Playing'
+            });
+
+            // Set playback state
+            navigator.mediaSession.playbackState = 'playing';
+
+            // Set up action handlers for transport controls
+            if (hasTransportControls) {
+                navigator.mediaSession.setActionHandler('play', () => {
+                    console.log('Media session: play');
+                    const playBtn = document.getElementById('playBtn');
+                    if (playBtn && !playBtn.disabled) {
+                        transportControl('play', null);
+                    }
+                });
+
+                navigator.mediaSession.setActionHandler('pause', () => {
+                    console.log('Media session: pause');
+                    const pauseBtn = document.getElementById('pauseBtn');
+                    if (pauseBtn && !pauseBtn.disabled) {
+                        transportControl('pause', null);
+                    }
+                });
+
+                navigator.mediaSession.setActionHandler('stop', () => {
+                    console.log('Media session: stop');
+                    const stopBtn = document.getElementById('stopBtn');
+                    if (stopBtn && !stopBtn.disabled) {
+                        transportControl('stop', null);
+                    }
+                });
+            } else {
+                // Clear transport handlers if not available
+                navigator.mediaSession.setActionHandler('play', null);
+                navigator.mediaSession.setActionHandler('pause', null);
+                navigator.mediaSession.setActionHandler('stop', null);
+            }
+
+            console.log('Media Session configured');
+        }
 
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -458,6 +579,7 @@
                 if (newActivityId !== String(currentActivityId)) {
                     previousActivityId = currentActivityId;
                     currentActivityId = newActivityId;
+                    currentActivityName = data.activity_name;
 
                     // Only re-render activities if activity changed
                     renderActivities();
@@ -480,6 +602,8 @@
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
                     document.getElementById('headerPowerBtn').disabled = true;
                     document.getElementById('powerEmoji').textContent = '⚫';
+                    // Clear media session when powered off
+                    updateMediaSession(null, false);
                 }
             } catch (error) {
                 showError('Failed to fetch current activity: ' + error.message);
@@ -556,17 +680,25 @@
                 ignoreAutoRefreshUntil = Date.now() + 3000;
 
                 currentActivityId = activityId;
+                currentActivityName = activityName;
 
                 if (activityId === '-1') {
                     document.getElementById('controls').classList.remove('active');
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
                     document.getElementById('headerPowerBtn').disabled = true;
                     document.getElementById('powerEmoji').textContent = '⚫';
+                    // Clear media session when powered off
+                    updateMediaSession(null, false);
                 } else {
                     document.getElementById('controls').classList.add('active');
                     document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = false);
                     document.getElementById('headerPowerBtn').disabled = false;
                     document.getElementById('powerEmoji').textContent = '🟢';
+
+                    // Start silent audio (user gesture allows this)
+                    startSilentAudio();
+
+                    // Fetch transport controls which will update media session
                     fetchTransportControls();
                 }
 
@@ -638,10 +770,15 @@
                 ignoreAutoRefreshUntil = Date.now() + 3000;
 
                 currentActivityId = '-1';
+                currentActivityName = null;
                 document.getElementById('controls').classList.remove('active');
                 document.querySelectorAll('.volume-controls').forEach(btn => btn.disabled = true);
                 document.getElementById('headerPowerBtn').disabled = true;
                 document.getElementById('powerEmoji').textContent = '⚫';
+
+                // Clear media session when powered off
+                updateMediaSession(null, false);
+
                 renderActivities();
             } catch (error) {
                 showError('Failed to power off: ' + error.message);
@@ -672,6 +809,12 @@
                 document.getElementById('playBtn').disabled = !controls.includes('play');
                 document.getElementById('pauseBtn').disabled = !controls.includes('pause');
                 document.getElementById('stopBtn').disabled = !controls.includes('stop');
+
+                // Update Media Session with transport control availability
+                const hasTransportControls = controls.length > 0;
+                if (currentActivityName && currentActivityName !== 'PowerOff') {
+                    updateMediaSession(currentActivityName, hasTransportControls);
+                }
 
             } catch (error) {
                 console.error('Failed to fetch transport controls:', error);
@@ -792,6 +935,7 @@
         });
 
         // Initialize
+        initializeSilentAudio();
         fetchActivities();
         fetchCurrentActivity();
 
