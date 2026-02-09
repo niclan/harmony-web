@@ -14,15 +14,21 @@ from flask import Flask, Blueprint, render_template, jsonify, request
 from aioharmony.harmonyapi import HarmonyAPI, SendCommandDevice
 import requests
 
-# Configure logging
+# Configure logging based on environment
+# Only enable DEBUG logging in development environment
+ENVIRONMENT = os.environ.get('ENVIRONMENT', 'production').lower()
+LOG_LEVEL = logging.DEBUG if ENVIRONMENT == 'dev' else logging.INFO
+
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=LOG_LEVEL,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Set aioharmony logging to DEBUG
-logging.getLogger('aioharmony').setLevel(logging.DEBUG)
+# Set aioharmony logging level to match application
+logging.getLogger('aioharmony').setLevel(LOG_LEVEL)
+
+logger.info(f"Starting application in {ENVIRONMENT} mode with log level {logging.getLevelName(LOG_LEVEL)}")
 
 app = Flask(__name__)
 
@@ -41,6 +47,34 @@ ALLOWED_IMAGE_DOMAINS = {
     'home.myharmony.com',                # Legacy Harmony domain
     'svcs.myharmony.com',                # Harmony services domain
 }
+
+
+def detect_image_type(file_path):
+    """
+    Detect image type by reading magic bytes (file signature).
+    Returns image type string or None if not a valid image.
+    Replaces deprecated imghdr module (removed in Python 3.13).
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            header = f.read(32)  # Read first 32 bytes
+
+        # Check magic bytes for common image formats
+        if header.startswith(b'\x89PNG\r\n\x1a\n'):
+            return 'png'
+        elif header.startswith(b'\xff\xd8\xff'):
+            return 'jpeg'
+        elif header.startswith(b'GIF87a') or header.startswith(b'GIF89a'):
+            return 'gif'
+        elif header.startswith(b'RIFF') and header[8:12] == b'WEBP':
+            return 'webp'
+        elif header.startswith(b'BM'):
+            return 'bmp'
+        else:
+            return None
+    except Exception as e:
+        logger.warning(f"Failed to detect image type for {file_path}: {e}")
+        return None
 
 # Global harmony client and event loop
 harmony_client = None
@@ -109,6 +143,7 @@ def cache_activity_image(activity_id, base_uri, image_key):
     Download and cache an activity image locally.
     Returns the local path relative to static directory, or None if download fails.
     Only downloads from whitelisted Logitech/Harmony domains for security.
+    Validates image file type and size for security.
     """
     if not image_key:
         return None
@@ -152,15 +187,43 @@ def cache_activity_image(activity_id, base_uri, image_key):
         response = requests.get(full_url, timeout=10)
         response.raise_for_status()
 
-        # Save to cache
-        with open(local_path, 'wb') as f:
+        # Validate file size (max 5MB)
+        MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
+        content_length = len(response.content)
+        if content_length > MAX_IMAGE_SIZE:
+            logger.warning(
+                f"Image too large for activity {activity_id}: {content_length} bytes "
+                f"(max {MAX_IMAGE_SIZE} bytes)"
+            )
+            return None
+
+        # Save to temporary location first for validation
+        temp_path = local_path.with_suffix('.tmp')
+        with open(temp_path, 'wb') as f:
             f.write(response.content)
 
-        logger.info(f"Cached activity image: {local_filename}")
+        # Validate image file type by magic bytes
+        image_type = detect_image_type(temp_path)
+        if image_type not in ['png', 'jpeg', 'gif', 'webp', 'bmp']:
+            logger.warning(
+                f"Invalid image type for activity {activity_id}: {image_type}. "
+                f"Only PNG, JPEG, GIF, WebP, and BMP are allowed."
+            )
+            temp_path.unlink()  # Delete invalid file
+            return None
+
+        # Move validated file to final location
+        temp_path.rename(local_path)
+
+        logger.info(f"Cached activity image: {local_filename} (type: {image_type}, size: {content_length} bytes)")
         return f'/static/images/activities/{local_filename}'
 
     except Exception as e:
         logger.warning(f"Failed to cache activity image from {full_url}: {e}")
+        # Clean up any temporary files
+        temp_path = local_path.with_suffix('.tmp')
+        if temp_path.exists():
+            temp_path.unlink()
         return None
 
 
@@ -203,7 +266,7 @@ def get_activities():
 
     except Exception as e:
         logger.error(f"Error fetching activities: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch activities'}), 500
 
 
 @bp.route('/api/current_activity', methods=['GET'])
@@ -228,7 +291,7 @@ def get_current_activity():
 
     except Exception as e:
         logger.error(f"Error fetching current activity: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch current activity'}), 500
 
 
 @bp.route('/api/start_activity', methods=['POST'])
@@ -240,6 +303,15 @@ def start_activity():
             return jsonify({'error': 'activity_id required'}), 400
 
         activity_id = data['activity_id']
+
+        # Validate activity_id is a string
+        if not isinstance(activity_id, str):
+            return jsonify({'error': 'activity_id must be a string'}), 400
+
+        # Validate activity_id format (digits or -1 for PowerOff)
+        if not (activity_id.isdigit() or activity_id == '-1'):
+            return jsonify({'error': 'activity_id must be a numeric string or "-1"'}), 400
+
         logger.debug(f"Starting activity ID: {activity_id}")
 
         async def start():
@@ -265,7 +337,7 @@ def start_activity():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Error starting activity: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to start activity'}), 500
 
 
 @bp.route('/api/power_off', methods=['POST'])
@@ -286,7 +358,7 @@ def power_off():
 
     except Exception as e:
         logger.error(f"Error powering off: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to power off'}), 500
 
 
 @bp.route('/api/volume', methods=['POST'])
@@ -298,6 +370,12 @@ def volume_control():
             return jsonify({'error': 'action required (up/down/mute)'}), 400
 
         action = data['action']
+
+        # Validate action is a string
+        if not isinstance(action, str):
+            return jsonify({'error': 'action must be a string'}), 400
+
+        # Validate action value against whitelist
         if action not in ['up', 'down', 'mute']:
             return jsonify({'error': 'action must be up, down, or mute'}), 400
 
@@ -361,7 +439,7 @@ def volume_control():
         return jsonify({'error': str(e)}), 404
     except Exception as e:
         logger.error(f"Error controlling volume: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to control volume'}), 500
 
 
 @bp.route('/api/transport_controls', methods=['GET'])
@@ -413,7 +491,7 @@ def get_transport_controls():
 
     except Exception as e:
         logger.error(f"Error checking transport controls: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to check transport controls'}), 500
 
 
 @bp.route('/api/transport', methods=['POST'])
@@ -424,7 +502,16 @@ def transport_control():
         if not data or 'action' not in data:
             return jsonify({'error': 'action required (play/pause/stop)'}), 400
 
-        action = data['action'].lower()
+        action = data['action']
+
+        # Validate action is a string
+        if not isinstance(action, str):
+            return jsonify({'error': 'action must be a string'}), 400
+
+        # Normalize to lowercase
+        action = action.lower()
+
+        # Validate action value against whitelist
         if action not in ['play', 'pause', 'stop', 'playpause']:
             return jsonify({'error': 'action must be play, pause, stop, or playpause'}), 400
 
@@ -491,7 +578,7 @@ def transport_control():
         return jsonify({'error': str(e)}), 404
     except Exception as e:
         logger.error(f"Error controlling transport: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to control transport'}), 500
 
 
 @bp.route('/api/devices', methods=['GET'])
@@ -511,7 +598,7 @@ def get_devices():
 
     except Exception as e:
         logger.error(f"Error fetching devices: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch devices'}), 500
 
 
 # Register blueprint with URL prefix
@@ -520,5 +607,7 @@ app.register_blueprint(bp, url_prefix=URL_PREFIX if URL_PREFIX else None)
 
 if __name__ == '__main__':
     logger.info("Starting Harmony Hub Web Controller")
-    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 'yes')
+    # Only enable Flask debug mode in development environment
+    # Never enable in production for security
+    debug_mode = ENVIRONMENT == 'dev'
     app.run(host='0.0.0.0', port=PORT, debug=debug_mode)

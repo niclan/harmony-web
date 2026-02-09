@@ -244,3 +244,17 @@ python -m unittest discover tests -v
 - Domain whitelist enforcement for image downloads
 - Error responses for invalid input
 - Successful API responses with mocked data
+
+## ALWAYS REMEMBER
+
+- Consider injection, quoting and validation when writing code
+- Update test suite
+- Update CLAUDE.md - but avoid line numbers, and replicating information you have in
+  other files such as the version numbers given in requirements.txt and so on.
+
+## Security
+
+- Assume friendly local network or that:
+- Any needed (authentication, authorization, https, rate limiting)
+  will be provided by NGiNX or other fronting proxy
+

@@ -86,15 +86,17 @@ class TestFlaskApp(unittest.TestCase):
 class TestImageCaching(unittest.TestCase):
     """Test activity image caching functionality."""
 
+    @patch('app.detect_image_type')
     @patch('app.requests.get')
     @patch('app.Path.exists')
-    def test_cache_activity_image_success(self, mock_exists, mock_get):
+    def test_cache_activity_image_success(self, mock_exists, mock_get, mock_detect):
         """Test successful image caching."""
         mock_exists.return_value = False
         mock_response = Mock()
         mock_response.content = b'fake_image_data'
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
+        mock_detect.return_value = 'png'  # Valid image type
 
         result = cache_activity_image(
             '123',
@@ -152,6 +154,79 @@ class TestInputValidation(unittest.TestCase):
                                  json={'activity_id': 'invalid'})
 
             self.assertEqual(response.status_code, 400)
+
+    def test_activity_id_type_validation(self):
+        """Test that activity_id must be a string."""
+        app.testing = True
+        client = app.test_client()
+
+        # Test with integer
+        response = client.post('/api/start_activity',
+                             json={'activity_id': 123})
+        self.assertEqual(response.status_code, 400)
+        data = response.get_json()
+        self.assertIn('must be a string', data['error'])
+
+        # Test with list
+        response = client.post('/api/start_activity',
+                             json={'activity_id': ['123']})
+        self.assertEqual(response.status_code, 400)
+
+        # Test with object
+        response = client.post('/api/start_activity',
+                             json={'activity_id': {'id': '123'}})
+        self.assertEqual(response.status_code, 400)
+
+    def test_activity_id_format_validation(self):
+        """Test that activity_id must be numeric or -1."""
+        app.testing = True
+        client = app.test_client()
+
+        # Test with invalid string
+        response = client.post('/api/start_activity',
+                             json={'activity_id': 'abc'})
+        self.assertEqual(response.status_code, 400)
+        data = response.get_json()
+        self.assertIn('must be a numeric string', data['error'])
+
+        # Test with special characters
+        response = client.post('/api/start_activity',
+                             json={'activity_id': '123;drop table'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_volume_action_type_validation(self):
+        """Test that volume action must be a string."""
+        app.testing = True
+        client = app.test_client()
+
+        # Test with integer
+        response = client.post('/api/volume',
+                             json={'action': 1})
+        self.assertEqual(response.status_code, 400)
+        data = response.get_json()
+        self.assertIn('must be a string', data['error'])
+
+        # Test with list
+        response = client.post('/api/volume',
+                             json={'action': ['up']})
+        self.assertEqual(response.status_code, 400)
+
+    def test_transport_action_type_validation(self):
+        """Test that transport action must be a string."""
+        app.testing = True
+        client = app.test_client()
+
+        # Test with integer
+        response = client.post('/api/transport',
+                             json={'action': 1})
+        self.assertEqual(response.status_code, 400)
+        data = response.get_json()
+        self.assertIn('must be a string', data['error'])
+
+        # Test with boolean
+        response = client.post('/api/transport',
+                             json={'action': True})
+        self.assertEqual(response.status_code, 400)
 
 
 class TestVolumeControl(unittest.TestCase):
@@ -523,6 +598,47 @@ class TestImageCachingEdgeCases(unittest.TestCase):
         mock_response.content = b'fake_image_data'
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
+
+        result = cache_activity_image(
+            '123',
+            'https://rcbu-prod-ssl-amr.myharmony.com/images/',
+            'test.png'
+        )
+
+        self.assertIsNone(result)
+
+    @patch('app.detect_image_type')
+    @patch('app.requests.get')
+    @patch('app.Path.exists')
+    def test_cache_activity_image_invalid_type(self, mock_exists, mock_get, mock_detect):
+        """Test image caching rejects invalid image types."""
+        mock_exists.return_value = False
+        mock_response = Mock()
+        mock_response.content = b'fake_data'
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+        mock_detect.return_value = None  # Invalid image type
+
+        result = cache_activity_image(
+            '123',
+            'https://rcbu-prod-ssl-amr.myharmony.com/images/',
+            'test.png'
+        )
+
+        self.assertIsNone(result)
+
+    @patch('app.detect_image_type')
+    @patch('app.requests.get')
+    @patch('app.Path.exists')
+    def test_cache_activity_image_size_limit(self, mock_exists, mock_get, mock_detect):
+        """Test image caching rejects images that are too large."""
+        mock_exists.return_value = False
+        mock_response = Mock()
+        # Create image larger than 5MB limit
+        mock_response.content = b'x' * (6 * 1024 * 1024)
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+        mock_detect.return_value = 'png'
 
         result = cache_activity_image(
             '123',
