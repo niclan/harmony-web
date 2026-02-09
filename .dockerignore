@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+tests/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+CLAUDE.md
+README.md
+LICENSE
+NOTICE
+
+# Deployment configs (not needed in container)
+deployment/
+docker-compose.yml
+Dockerfile
+
+# Cached images (downloaded at runtime)
+static/images/activities/*
+!static/images/activities/.gitkeep
