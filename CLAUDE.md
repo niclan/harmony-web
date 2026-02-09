@@ -325,4 +325,3 @@ When writing new code:
 - Use INFO level logging for production, DEBUG only for development
 - Never execute shell commands with user input
 - Sanitize all user-controlled data before HTML output (use `escapeHtml()` in JavaScript)
-
