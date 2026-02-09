@@ -14,11 +14,11 @@ Logitech Harmony Hub Web Controller - A Python Flask web application that provid
 # Activate virtual environment first
 source venv/bin/activate
 
-# Direct Python execution
+# Direct Python execution (production mode - INFO logging)
 python app.py
 
-# For debug mode with auto-reload, set FLASK_DEBUG
-FLASK_DEBUG=true python app.py
+# For development mode with DEBUG logging and auto-reload
+ENVIRONMENT=dev python app.py
 
 # The app runs on http://0.0.0.0:5000
 ```
@@ -43,7 +43,7 @@ docker run -d -p 5000:5000 -e HARMONY_IP="192.168.1.123" harmony-controller
 # Install dependencies
 pip install -r requirements.txt
 
-# Dependencies: Flask 3.1.2, aioharmony 0.5.3, requests 2.32.5, gunicorn 21.2.0
+# Dependencies defined in requirements.txt (see file for current versions)
 ```
 
 ## Architecture
@@ -71,25 +71,32 @@ pip install -r requirements.txt
   - Falls back to `PlayMediaActivityRole` if PassThroughActivityRole not present
   - This mapping ensures commands go to the correct device (e.g., play/pause to Squeezebox, volume to amplifier)
 
-- **Activity Image Caching**: Downloads activity images from Harmony Hub CDN and caches locally
+- **Activity Image Caching**: Downloads activity images from Harmony Hub CDN and caches locally with validation
   - Images downloaded from `baseImageUri + imageKey` fields in activity config
-  - **Security**: Domain whitelist restricts downloads to trusted Logitech/Harmony CDN domains only
-    - Allowed domains: `rcbu-prod-ssl-amr.myharmony.com`, `home.myharmony.com`, `svcs.myharmony.com`
-    - Rejects and logs attempts to download from untrusted domains
+  - **Security Features**:
+    - Domain whitelist: Only trusted Logitech/Harmony CDN domains allowed (`rcbu-prod-ssl-amr.myharmony.com`, `home.myharmony.com`, `svcs.myharmony.com`)
+    - File size limit: 5MB maximum
+    - Magic byte validation: Only PNG, JPEG, GIF, WebP, and BMP image types accepted
+    - Temporary file validation before moving to cache
+    - Automatic cleanup of invalid files
   - Cached in `static/images/activities/` directory (gitignored except .gitkeep)
   - Cache-forever strategy: images never expire once downloaded
-  - Type-based fallback emoji icons used when no image available (music, video, TV, power, generic)
+  - Type-based fallback emoji icons used when no image available
   - `/api/activities` endpoint includes `cachedImageUrl` field with local path
 
-- **Input Validation**: Activity IDs validated against Harmony Hub config before execution
-  - `/api/start_activity` validates activity_id exists in config
-  - Returns 400 Bad Request for invalid activity IDs
-  - Prevents commands to non-existent activities
+- **Input Validation**: Comprehensive validation for all API inputs
+  - **Type validation**: All POST parameters must be correct type (string) using `isinstance()` checks
+  - **Activity ID validation**: Must be numeric string matching `/^\d+$/` or "-1", then validated against hub config
+  - **Action parameter validation**: Whitelisted values only (e.g., "up"/"down"/"mute" for volume)
+  - Returns 400 Bad Request with descriptive error for invalid inputs
+  - Prevents: Type confusion attacks, injection attempts, commands to non-existent entities
 
-- **Logging**: Comprehensive debug logging throughout
-  - Application logs at DEBUG level
-  - aioharmony library logs at DEBUG level
-  - All logs include timestamps and full tracebacks
+- **Logging**: Environment-aware logging configuration
+  - **Production** (default): INFO level for application and aioharmony
+  - **Development** (`ENVIRONMENT=dev`): DEBUG level with verbose output
+  - All logs include timestamps and source information
+  - Error logs include full tracebacks for debugging
+  - Generic error messages sent to users while full details logged internally
 
 **templates/index.html** - Single-page web UI:
 - Vanilla JavaScript (no frameworks)
@@ -140,7 +147,10 @@ All endpoints return JSON with `{'error': str}` on failure or appropriate succes
 Environment variables:
 - `HARMONY_IP` - Harmony Hub IP address (default: "192.168.1.123")
 - `URL_PREFIX` - URL prefix for reverse proxy deployment (default: empty, example: "/harmony")
-- `FLASK_DEBUG` - Enable Flask debug mode (default: "False", accepts: "true", "1", "yes")
+- `ENVIRONMENT` - Application environment mode (default: "production", set to "dev" for development)
+  - **production** (default): INFO logging, Flask debug disabled
+  - **dev**: DEBUG logging, Flask debug and auto-reload enabled
+- `PORT` - Port to listen on (default: "5000")
 
 Set via export, .env file, Docker environment, or systemd service file.
 
@@ -148,7 +158,7 @@ Set via export, .env file, Docker environment, or systemd service file.
 All routes are registered via Flask Blueprint with configurable `url_prefix`. This allows the app to run behind nginx reverse proxy at a subpath (e.g., `/harmony`). When `URL_PREFIX` is set, all endpoints are prefixed (e.g., `/harmony/api/activities`).
 
 **Production Deployment:**
-- Keep `FLASK_DEBUG=False` (default) to disable debug mode
+- Use default `ENVIRONMENT=production` (INFO logging, no debug mode)
 - See `deployment/` directory for nginx config and systemd service files
 - Runs via gunicorn WSGI server (not Flask's built-in server)
 - systemd service manages gunicorn process
@@ -230,31 +240,89 @@ python -m unittest discover tests -v
 ```
 
 **Test Coverage:**
-- Flask route endpoints (index, activities, current_activity, start_activity, power_off)
-- Image caching functionality with domain validation
-- Input validation for activity IDs
-- Error handling for invalid requests
+- All Flask route endpoints (index, activities, current_activity, start_activity, power_off, volume, transport, devices)
+- Volume control endpoint with validation and error handling
+- Transport control endpoints with availability detection
+- Image caching with domain whitelist, size limits, and type validation
+- Input type and format validation for all POST parameters
+- Error handling for invalid requests and connection failures
 
 **Test Files:**
-- `tests/test_app.py` - Main application tests
+- `tests/test_app.py` - Main application tests (47 tests)
 
 **Key Test Areas:**
 - Mocked `HarmonyAPI` client for isolated testing
-- Activity ID validation against config
+- Input type validation (string type enforcement)
+- Input format validation (numeric activity IDs, whitelisted actions)
+- Activity ID validation against hub config
 - Domain whitelist enforcement for image downloads
+- Image file size and type validation
 - Error responses for invalid input
+- Generic error messages without internal details
 - Successful API responses with mocked data
 
 ## ALWAYS REMEMBER
 
-- Consider injection, quoting and validation when writing code
 - Update test suite
-- Update CLAUDE.md - but avoid line numbers, and replicating information you have in
-  other files such as the version numbers given in requirements.txt and so on.
+- Update CLAUDE.md - but avoid line numbers, and replicating
+  information you have in other files such as the version numbers
+  given in requirements.txt and so on.
 
 ## Security
 
-- Assume friendly local network or that:
-- Any needed (authentication, authorization, https, rate limiting)
-  will be provided by NGiNX or other fronting proxy
+### Security Implementation
+
+The application implements multiple layers of security appropriate for local network deployment:
+
+**Input Validation & Injection Prevention:**
+- All POST parameters validated for correct type using `isinstance()` checks
+- Activity IDs must match `/^\d+$/` or "-1" format
+- Action parameters validated against whitelists before processing
+- Prevents: Type confusion attacks, SQL injection (N/A - no database), command injection
+
+**Image Security:**
+- Domain whitelist: Only Logitech/Harmony CDN domains accepted
+- File size limit: 5MB maximum per image
+- Magic byte validation: PNG, JPEG, GIF, WebP, BMP only
+- Temporary file validation before moving to cache
+- Automatic cleanup of invalid files
+- Prevents: SSRF attacks, malicious file uploads, disk exhaustion
+
+**Error Handling:**
+- Generic error messages sent to users ("Failed to start activity")
+- Full exception details logged internally with stack traces
+- ValueError messages preserved for input validation errors
+- Prevents: Information disclosure of internal system details
+
+**Logging Security:**
+- INFO level logging by default (production)
+- DEBUG level only when `ENVIRONMENT=dev`
+- Prevents: Sensitive data leakage in production logs
+
+**Debug Mode Protection:**
+- Flask debug mode ONLY enabled when `ENVIRONMENT=dev`
+- Cannot be enabled via environment variable in production
+- Prevents: Exposure of interactive debugger and code execution
+
+### Security Assumptions
+
+**Deployment Model:**
+- Assumes friendly local network OR
+- Authentication, authorization, HTTPS, and rate limiting provided by nginx or other reverse proxy
+
+**Out of Scope (Handled at Network/Proxy Level):**
+- Authentication/Authorization (assumes trusted network or proxy handles it)
+- HTTPS/TLS (nginx terminates SSL if needed)
+- CSRF protection (assumes same-origin or proxy enforces it)
+- Rate limiting (nginx can implement if needed)
+
+### Code Security Guidelines
+
+When writing new code:
+- Always validate input types with `isinstance()` before processing
+- Validate string formats with regex or whitelist checks
+- Return generic error messages to users, log full details internally
+- Use INFO level logging for production, DEBUG only for development
+- Never execute shell commands with user input
+- Sanitize all user-controlled data before HTML output (use `escapeHtml()` in JavaScript)
 
