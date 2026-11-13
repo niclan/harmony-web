@@ -111,7 +111,7 @@
 
         .controls-grid {
             display: grid;
-            grid-template-columns: repeat(6, 1fr);
+            grid-template-columns: repeat(7, 1fr);
             gap: 10px;
         }
 
@@ -376,6 +376,10 @@
                 <button id="stopBtn" class="transport-controls" onclick="transportControl('stop', event)" disabled>
                     <span class="emoji">⏹️</span>
                     <span>Stop</span>
+                </button>
+                <button id="nextBtn" class="transport-controls" onclick="transportControl('next', event)" disabled>
+                    <span class="emoji">⏭️</span>
+                    <span>Next</span>
                 </button>
                 <button class="volume-controls" onclick="volumeControl('up', event)">
                     <span class="emoji">🔊</span>
@@ -811,6 +815,7 @@
                     document.getElementById('playBtn').disabled = true;
                     document.getElementById('pauseBtn').disabled = true;
                     document.getElementById('stopBtn').disabled = true;
+                    document.getElementById('nextBtn').disabled = true;
                     return;
                 }
 
@@ -819,6 +824,7 @@
                 document.getElementById('playBtn').disabled = !controls.includes('play');
                 document.getElementById('pauseBtn').disabled = !controls.includes('pause');
                 document.getElementById('stopBtn').disabled = !controls.includes('stop');
+                document.getElementById('nextBtn').disabled = !controls.includes('next');
 
                 // Update Media Session with transport control availability
                 const hasTransportControls = controls.length > 0;
@@ -832,6 +838,7 @@
                 document.getElementById('playBtn').disabled = true;
                 document.getElementById('pauseBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = true;
+                document.getElementById('nextBtn').disabled = true;
             }
         }
 

@@ -105,7 +105,7 @@ pip install -r requirements.txt
   - White cards with rounded corners for all content sections
   - Power button in header on left side with emoji icon
   - Always-visible control buttons (grayed out when inactive)
-  - Six control buttons in single row: Play, Pause, Stop, Volume Up, Volume Down, Mute
+- Seven control buttons in single row: Play, Pause, Stop, Next, Volume Up, Volume Down, Mute
   - Square-shaped control buttons with large emoji icons above text
   - Color-coded controls: green (transport), purple (volume), red (power)
 - **Activity Indication**:
@@ -134,9 +134,10 @@ All endpoints return JSON with `{'error': str}` on failure or appropriate succes
 - `POST /api/start_activity` - Start activity by ID (requires `{"activity_id": str}`)
 - `POST /api/power_off` - Turn off all activities (activity ID -1)
 - `GET /api/transport_controls` - Check if current activity supports transport controls (checks for PassThroughActivityRole or PlayMediaActivityRole)
-- `POST /api/transport` - Transport control (requires `{"action": "play"|"pause"|"stop"}`)
+- `POST /api/transport` - Transport control (requires `{"action": "play"|"pause"|"stop"|"next"}`)
   - Uses PassThroughActivityRole first, falls back to PlayMediaActivityRole
   - Sends standard command names (Play, Pause, Stop) to the appropriate device
+  - Exposes Next only when the selected transport device advertises its `Next` or `NextTrack` command
 - `POST /api/volume` - Volume control (requires `{"action": "up"|"down"|"mute"}`)
   - Uses VolumeActivityRole to find correct device
   - Returns 404 if no volume device found for activity

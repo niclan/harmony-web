@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from app import app, cache_activity_image
+from app import app, cache_activity_image, get_device_command
 
 
 class TestHubDiscovery(unittest.TestCase):
@@ -432,6 +432,75 @@ class TestTransportControls(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertFalse(data['available'])
+
+
+class TestNextTransportControl(unittest.TestCase):
+    """Tests for capability-gated next-track control."""
+
+    def setUp(self):
+        self.app = app
+        self.app.testing = True
+        self.client = self.app.test_client()
+        self.config = {
+            'activity': [{
+                'id': '1',
+                'roles': {
+                    'PassThroughActivityRole': 'squeezebox',
+                    'PlayMediaActivityRole': 'cd-player',
+                },
+            }],
+            'device': [
+                {'id': 'squeezebox', 'controlGroup': [{'function': [
+                    {'action': '{"command": "Next"}'},
+                ]}]},
+                {'id': 'cd-player', 'controlGroup': [{'function': []}]},
+            ],
+        }
+
+    def test_detects_next_command_on_selected_device(self):
+        self.assertEqual(get_device_command(self.config, 'squeezebox', ('Next', 'NextTrack')), 'Next')
+        self.assertIsNone(get_device_command(self.config, 'cd-player', ('Next', 'NextTrack')))
+
+    @patch('app.get_harmony_client')
+    @patch('app.run_async')
+    def test_next_is_offered_only_when_passthrough_device_supports_it(self, mock_run_async, mock_get_client):
+        client = Mock(current_activity=('1', 'Squeezebox'), config=self.config)
+        mock_get_client.return_value = client
+        mock_run_async.side_effect = lambda coro: asyncio.run(coro)
+
+        response = self.client.get('/api/transport_controls')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('next', response.get_json()['controls'])
+
+    @patch('app.get_harmony_client')
+    @patch('app.run_async')
+    def test_next_uses_passthrough_device(self, mock_run_async, mock_get_client):
+        client = Mock(current_activity=('1', 'Squeezebox'), config=self.config)
+        client.send_commands = AsyncMock()
+        mock_get_client.return_value = client
+        mock_run_async.side_effect = lambda coro: asyncio.run(coro)
+
+        response = self.client.post('/api/transport', json={'action': 'next'})
+
+        self.assertEqual(response.status_code, 200)
+        command = client.send_commands.await_args.args[0]
+        self.assertEqual(command.device, 'squeezebox')
+        self.assertEqual(command.command, 'Next')
+
+    @patch('app.get_harmony_client')
+    @patch('app.run_async')
+    def test_nexttrack_uses_the_advertised_command_name(self, mock_run_async, mock_get_client):
+        self.config['device'][0]['controlGroup'][0]['function'][0]['action'] = '{"command": "NextTrack"}'
+        client = Mock(current_activity=('1', 'Squeezebox'), config=self.config)
+        client.send_commands = AsyncMock()
+        mock_get_client.return_value = client
+        mock_run_async.side_effect = lambda coro: asyncio.run(coro)
+
+        response = self.client.post('/api/transport', json={'action': 'next'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(client.send_commands.await_args.args[0].command, 'NextTrack')
 
 
 class TestTransportControl(unittest.TestCase):

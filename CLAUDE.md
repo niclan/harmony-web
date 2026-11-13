@@ -24,3 +24,8 @@ The frontend schedules activity-list refreshes after each request completes:
 retry failures every five seconds and refresh successful responses every minute.
 Only changed lists redraw cards. Run `node tests/test_frontend.js` to verify retry,
 recovery, and unchanged-list behavior without contacting the Hub.
+
+The Next transport button is capability-gated from the command list of the
+activity's selected transport device. It supports Harmony's `Next` and
+`NextTrack` command names. Preserve PassThroughActivityRole precedence over
+PlayMediaActivityRole so Squeezebox commands do not go to the CD player.

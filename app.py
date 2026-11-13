@@ -23,6 +23,7 @@ Authors:
 
 import os
 import asyncio
+import json
 import logging
 import threading
 import socket
@@ -67,6 +68,26 @@ ALLOWED_IMAGE_DOMAINS = {
     'home.myharmony.com',                # Legacy Harmony domain
     'svcs.myharmony.com',                # Harmony services domain
 }
+
+
+def get_device_command(config, device_id, command_names):
+    """Return the configured command name supported by a device, if any."""
+    for device in config.get('device', []):
+        if str(device.get('id')) != str(device_id):
+            continue
+        for control_group in device.get('controlGroup', []):
+            for function in control_group.get('function', []):
+                action = function.get('action')
+                if isinstance(action, str):
+                    try:
+                        action = json.loads(action)
+                    except json.JSONDecodeError:
+                        continue
+                command = action.get('command') if isinstance(action, dict) else None
+                if command in command_names:
+                    return command
+        return None
+    return None
 
 
 def detect_image_type(file_path):
@@ -538,9 +559,12 @@ def get_transport_controls():
 
             if transport_device_id:
                 # Activity has a transport-capable device
+                controls = ['play', 'pause', 'stop']
+                if get_device_command(client.config, transport_device_id, ('Next', 'NextTrack')):
+                    controls.append('next')
                 return {
                     'available': True,
-                    'controls': ['play', 'pause', 'stop']
+                    'controls': controls
                 }
             else:
                 return {
@@ -559,11 +583,11 @@ def get_transport_controls():
 
 @bp.route('/api/transport', methods=['POST'])
 def transport_control():
-    """Control media transport (play/pause/stop)."""
+    """Control media transport."""
     try:
         data = request.get_json()
         if not data or 'action' not in data:
-            return jsonify({'error': 'action required (play/pause/stop)'}), 400
+            return jsonify({'error': 'action required (play/pause/stop/next)'}), 400
 
         action = data['action']
 
@@ -575,8 +599,8 @@ def transport_control():
         action = action.lower()
 
         # Validate action value against whitelist
-        if action not in ['play', 'pause', 'stop', 'playpause']:
-            return jsonify({'error': 'action must be play, pause, stop, or playpause'}), 400
+        if action not in ['play', 'pause', 'stop', 'playpause', 'next']:
+            return jsonify({'error': 'action must be play, pause, stop, playpause, or next'}), 400
 
         logger.debug(f"Transport control: {action}")
 
@@ -611,6 +635,10 @@ def transport_control():
                 logger.warning(f"No PassThroughActivityRole or PlayMediaActivityRole found for activity {current_activity_name}")
                 raise ValueError("No transport control device configured for this activity")
 
+            next_command = get_device_command(client.config, transport_device_id, ('Next', 'NextTrack'))
+            if action == 'next' and not next_command:
+                raise ValueError("Next track is not available for this activity")
+
             logger.debug(f"Found transport device ID: {transport_device_id} for activity {current_activity_name}")
 
             # Map action to standard command names
@@ -618,7 +646,8 @@ def transport_control():
                 'play': 'Play',
                 'pause': 'Pause',
                 'stop': 'Stop',
-                'playpause': 'PlayPause'
+                'playpause': 'PlayPause',
+                'next': next_command
             }
             command_name = command_map[action]
 

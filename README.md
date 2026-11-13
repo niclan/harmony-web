@@ -107,7 +107,7 @@ Docker deployments automatically use gunicorn in production mode.
 - `POST /api/start_activity` - Start activity (requires `activity_id` in JSON body)
 - `POST /api/power_off` - Turn off all activities
 - `GET /api/transport_controls` - Get available transport controls for current activity
-- `POST /api/transport` - Transport control (requires `action`: "play", "pause", or "stop")
+- `POST /api/transport` - Transport control (requires `action`: "play", "pause", "stop", or "next"; Next is offered only when the selected transport device supports its `Next` or `NextTrack` command)
 - `POST /api/volume` - Volume control (requires `action`: "up", "down", or "mute")
 - `GET /api/devices` - List all devices
 
