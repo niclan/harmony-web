@@ -31,7 +31,7 @@ sudo chown -R www-data:www-data /opt/harmony-web
 ### 2. Configure Environment Variables
 
 Edit `/opt/harmony-web/deployment/harmony-web.service` and set:
-- `HARMONY_IP` - Your Harmony Hub IP address
+- `HARMONY_IP` - Optional Hub IP override; leave commented out for automatic SSDP discovery (requires local-network multicast access)
 - `URL_PREFIX` - URL prefix (default: /harmony)
 - `FLASK_DEBUG` - Debug mode (default: False)
 

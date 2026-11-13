@@ -25,6 +25,9 @@ import os
 import asyncio
 import logging
 import threading
+import socket
+import time
+from ipaddress import IPv4Address
 from pathlib import Path
 from urllib.parse import urlparse
 from flask import Flask, Blueprint, render_template, jsonify, request
@@ -50,10 +53,10 @@ logger.info(f"Starting application in {ENVIRONMENT} mode with log level {logging
 app = Flask(__name__)
 
 # Configuration
-HARMONY_IP = os.environ.get('HARMONY_IP', '192.168.1.123')
+HARMONY_IP = os.environ.get('HARMONY_IP', '').strip()
 URL_PREFIX = os.environ.get('URL_PREFIX', '').rstrip('/')
 PORT = int(os.environ.get('PORT', '5000'))
-logger.info(f"Using Harmony Hub IP: {HARMONY_IP}")
+logger.info(f"Using Harmony Hub IP: {HARMONY_IP}" if HARMONY_IP else "Harmony Hub automatic discovery enabled")
 if URL_PREFIX:
     logger.info(f"Using URL prefix: {URL_PREFIX}")
 logger.info(f"Listening on port: {PORT}")
@@ -98,16 +101,59 @@ harmony_client = None
 loop = None
 loop_thread = None
 loop_ready = threading.Event()
+loop_start_lock = threading.Lock()
+client_lock = asyncio.Lock()
+
+
+def discover_harmony_hub():
+    """Find a single Harmony Hub via SSDP without fetching advertised URLs."""
+    service = 'urn:myharmony-com:device:harmony:1'
+    query = (
+        'M-SEARCH * HTTP/1.1\r\n'
+        'HOST: 239.255.255.250:1900\r\n'
+        'MAN: "ssdp:discover"\r\n'
+        'MX: 2\r\n'
+        f'ST: {service}\r\n\r\n'
+    ).encode('ascii')
+    hubs = set()
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        sock.sendto(query, ('239.255.255.250', 1900))
+        deadline = time.monotonic() + 5
+        while (remaining := deadline - time.monotonic()) > 0:
+            sock.settimeout(remaining)
+            try:
+                packet, address = sock.recvfrom(8192)
+            except socket.timeout:
+                break
+            lines = packet.decode('utf-8', errors='replace').splitlines()
+            if not lines or lines[0].strip().upper() != 'HTTP/1.1 200 OK':
+                continue
+            headers = dict(
+                (key.strip().lower(), value.strip())
+                for line in lines[1:] if ':' in line
+                for key, value in [line.split(':', 1)]
+            )
+            if headers.get('st') == service:
+                ip = IPv4Address(address[0])
+                if not (ip.is_unspecified or ip.is_multicast or ip.is_loopback):
+                    hubs.add(str(ip))
+    if not hubs:
+        raise ConnectionError('No Harmony Hub discovered; check multicast access or set HARMONY_IP')
+    if len(hubs) > 1:
+        raise ConnectionError(f'Multiple Harmony Hubs discovered ({", ".join(sorted(hubs))}); set HARMONY_IP')
+    return hubs.pop()
 
 
 def start_background_loop():
     """Start the asyncio event loop in a background thread."""
     global loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    background_loop = asyncio.new_event_loop()
+    loop = background_loop
+    asyncio.set_event_loop(background_loop)
     logger.info("Starting background event loop")
-    loop_ready.set()  # Signal that loop is ready
-    loop.run_forever()
+    background_loop.call_soon(loop_ready.set)
+    background_loop.run_forever()
 
 
 def run_async(coro):
@@ -117,14 +163,15 @@ def run_async(coro):
     """
     global loop, loop_thread
 
-    if loop is None or not loop.is_running():
-        # Start background loop thread if not running
-        loop_ready.clear()
-        loop_thread = threading.Thread(target=start_background_loop, daemon=True)
-        loop_thread.start()
-        # Wait for loop to be ready (max 5 seconds)
-        if not loop_ready.wait(timeout=5):
-            raise RuntimeError("Background event loop failed to start")
+    with loop_start_lock:
+        if loop is None or not loop.is_running():
+            if loop_thread is None or not loop_thread.is_alive():
+                loop_ready.clear()
+                loop_thread = threading.Thread(target=start_background_loop, daemon=True)
+                loop_thread.start()
+            if not loop_ready.wait(timeout=5):
+                coro.close()
+                raise RuntimeError("Background event loop failed to start")
 
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     return future.result(timeout=60)
@@ -137,20 +184,19 @@ async def get_harmony_client():
     """
     global harmony_client
 
-    if harmony_client is None:
-        logger.debug(f"Creating new Harmony client for {HARMONY_IP}")
-        harmony_client = HarmonyAPI(ip_address=HARMONY_IP)
-
-        try:
-            if not await harmony_client.connect():
-                logger.error("Failed to connect to Harmony Hub")
-                harmony_client = None
-                raise ConnectionError("Could not connect to Harmony Hub")
-            logger.info("Successfully connected to Harmony Hub")
-        except Exception as e:
-            logger.error(f"Error connecting to Harmony Hub: {e}", exc_info=True)
-            harmony_client = None
-            raise
+    async with client_lock:
+        if harmony_client is None:
+            ip_address = HARMONY_IP or await asyncio.to_thread(discover_harmony_hub)
+            logger.info("Connecting to Harmony Hub at %s", ip_address)
+            client = HarmonyAPI(ip_address=ip_address)
+            try:
+                if not await client.connect():
+                    raise ConnectionError("Could not connect to Harmony Hub")
+                harmony_client = client
+                logger.info("Successfully connected to Harmony Hub")
+            except Exception:
+                logger.exception("Error connecting to Harmony Hub at %s", ip_address)
+                raise
 
     return harmony_client
 

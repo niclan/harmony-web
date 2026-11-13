@@ -5,11 +5,86 @@ import sys
 import os
 import asyncio
 import requests
+import socket
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app import app, cache_activity_image
+
+
+class TestHubDiscovery(unittest.TestCase):
+    @patch('app.socket.socket')
+    def test_discovery_filters_and_deduplicates(self, mock_socket):
+        from app import discover_harmony_hub
+        sock = mock_socket.return_value.__enter__.return_value
+        valid = b'HTTP/1.1 200 OK\r\nst: urn:myharmony-com:device:harmony:1\r\n\r\n'
+        sock.recvfrom.side_effect = [
+            (b'garbage', ('192.168.1.2', 1900)),
+            (b'HTTP/1.1 200 OK\r\nST: unrelated\r\n', ('192.168.1.3', 1900)),
+            (valid, ('192.168.1.4', 1900)),
+            (valid, ('192.168.1.4', 1900)), socket.timeout(),
+        ]
+        self.assertEqual(discover_harmony_hub(), '192.168.1.4')
+        self.assertIn(b'M-SEARCH', sock.sendto.call_args.args[0])
+        mock_socket.return_value.__exit__.assert_called_once()
+
+    @patch('app.socket.socket')
+    def test_no_hub(self, mock_socket):
+        from app import discover_harmony_hub
+        mock_socket.return_value.__enter__.return_value.recvfrom.side_effect = socket.timeout()
+        with self.assertRaisesRegex(ConnectionError, 'No Harmony Hub'):
+            discover_harmony_hub()
+
+    @patch('app.socket.socket')
+    def test_multiple_hubs_require_explicit_ip(self, mock_socket):
+        from app import discover_harmony_hub
+        valid = b'HTTP/1.1 200 OK\r\nST: urn:myharmony-com:device:harmony:1\r\n'
+        mock_socket.return_value.__enter__.return_value.recvfrom.side_effect = [
+            (valid, ('192.168.1.4', 1900)),
+            (valid, ('192.168.1.5', 1900)), socket.timeout(),
+        ]
+        with self.assertRaisesRegex(ConnectionError, 'Multiple Harmony Hubs'):
+            discover_harmony_hub()
+
+
+class TestHubConnection(unittest.IsolatedAsyncioTestCase):
+    @patch('app.harmony_client', None)
+    @patch('app.HARMONY_IP', '192.168.1.10')
+    @patch('app.discover_harmony_hub')
+    @patch('app.HarmonyAPI')
+    async def test_explicit_ip_skips_discovery(self, api, discover):
+        from app import get_harmony_client
+        api.return_value.connect = AsyncMock(return_value=True)
+        self.assertIs(await get_harmony_client(), api.return_value)
+        api.assert_called_once_with(ip_address='192.168.1.10')
+        discover.assert_not_called()
+
+    @patch('app.harmony_client', None)
+    @patch('app.HARMONY_IP', '')
+    @patch('app.discover_harmony_hub', return_value='192.168.1.20')
+    @patch('app.HarmonyAPI')
+    async def test_discovered_client_is_reused(self, api, discover):
+        from app import get_harmony_client
+        api.return_value.connect = AsyncMock(return_value=True)
+        self.assertIs(await get_harmony_client(), api.return_value)
+        self.assertIs(await get_harmony_client(), api.return_value)
+        discover.assert_called_once()
+        api.assert_called_once_with(ip_address='192.168.1.20')
+
+    @patch('app.harmony_client', None)
+    @patch('app.HARMONY_IP', '')
+    @patch('app.discover_harmony_hub', side_effect=[ConnectionError('No hub'), '192.168.1.20'])
+    @patch('app.HarmonyAPI')
+    async def test_discovery_retries_after_failure(self, api, discover):
+        from app import get_harmony_client
+        api.return_value.connect = AsyncMock(return_value=True)
+        with self.assertRaises(ConnectionError):
+            await get_harmony_client()
+        self.assertIs(await get_harmony_client(), api.return_value)
+        self.assertEqual(discover.call_count, 2)
 
 
 class TestFlaskApp(unittest.TestCase):
@@ -651,6 +726,32 @@ class TestImageCachingEdgeCases(unittest.TestCase):
 
 class TestAsyncInfrastructure(unittest.TestCase):
     """Test async infrastructure."""
+
+    def test_concurrent_requests_share_one_background_loop(self):
+        import app as module
+        barrier = threading.Barrier(8)
+
+        async def identify_loop():
+            return id(asyncio.get_running_loop())
+
+        def request():
+            barrier.wait(timeout=5)
+            return module.run_async(identify_loop())
+
+        with patch.object(module, 'loop', None), \
+             patch.object(module, 'loop_thread', None), \
+             patch.object(module, 'loop_ready', threading.Event()), \
+             patch.object(module, 'start_background_loop', wraps=module.start_background_loop) as start:
+            try:
+                with ThreadPoolExecutor(max_workers=8) as workers:
+                    results = list(workers.map(lambda _: request(), range(8)))
+                self.assertEqual(len(set(results)), 1)
+                start.assert_called_once()
+            finally:
+                if module.loop is not None and module.loop.is_running():
+                    module.loop.call_soon_threadsafe(module.loop.stop)
+                    module.loop_thread.join(timeout=5)
+                    module.loop.close()
 
     @patch('app.asyncio.run_coroutine_threadsafe')
     @patch('app.loop')

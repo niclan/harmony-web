@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-47%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-unittest-blue.svg)](tests/)
 
 A Python Flask web application that provides a web interface and REST
 API for controlling Logitech Harmony Hub activities.
@@ -21,6 +21,7 @@ API for controlling Logitech Harmony Hub activities.
 - **Media Session API** integration for lock screen controls (mobile/desktop)
 - **REST API** for programmatic control
 - **Auto-refresh** of current activity status every 5 seconds
+- **Activity list recovery** retries failed loads every 5 seconds and refreshes successful loads every minute
 - **Security Hardening** with input validation, image validation, and error sanitization
 - **Production Ready** with gunicorn WSGI server
 - **Docker Support** for easy deployment
@@ -37,8 +38,8 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Set your Harmony Hub IP
-export HARMONY_IP="192.168.1.123"
+# Optional: override automatic Hub discovery
+# export HARMONY_IP="192.168.1.123"
 
 # Run in production mode (INFO logging)
 python app.py
@@ -51,17 +52,20 @@ Visit http://localhost:5000 to access the web interface.
 
 ### Running Tests
 
-The project includes 47 comprehensive tests covering all endpoints, security validation, and error handling.
+The test suite covers endpoints, security validation, Hub discovery, and error handling.
 
 ```bash
 # Run unit tests
 python -m unittest discover tests -v
+
+# Frontend activity refresh regression test (requires Node.js)
+node tests/test_frontend.js
 ```
 
 ### Using Docker
 
 ```bash
-# Set your Harmony Hub IP
+# Set your Harmony Hub IP (recommended for Docker bridge networking)
 export HARMONY_IP="192.168.1.123"
 
 # Build and run
@@ -71,7 +75,7 @@ docker-compose up -d
 ## Configuration
 
 Environment variables:
-- `HARMONY_IP` - Harmony Hub IP address (default: `192.168.1.123`)
+- `HARMONY_IP` - Optional Hub IP override; unset or empty enables automatic SSDP discovery
 - `URL_PREFIX` - URL prefix for reverse proxy deployment (default: none, example: `/harmony`)
 - `ENVIRONMENT` - Application mode (default: `production`, set to `dev` for development)
   - `production`: INFO level logging, Flask debug disabled
@@ -79,6 +83,16 @@ Environment variables:
 - `PORT` - Port to listen on (default: `5000`)
 
 ### Production Deployment
+
+Discovery runs on the first Hub request and waits up to five seconds. It requires
+local-network multicast access (UDP 239.255.255.250:1900). A discovered connection
+is reused; failed discovery is retried on the next request. If multiple Hubs are
+found, set `HARMONY_IP` to choose one. Existing installations with `HARMONY_IP`
+set must unset it to enable discovery.
+
+Docker bridge networks and routed networks may block discovery. Set an explicit
+`HARMONY_IP`, or use host networking on Linux (remove the Compose `ports` mapping
+and add `network_mode: host`).
 
 The application uses **gunicorn** as the production WSGI server (not Flask's built-in development server).
 

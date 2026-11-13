@@ -7,7 +7,8 @@ Type=notify
 User=www-data
 Group=www-data
 WorkingDirectory=/var/lib/harmony-web
-Environment="HARMONY_IP=192.168.1.123"
+# Optional override; omit for automatic discovery.
+# Environment="HARMONY_IP=192.168.1.123"
 Environment="URL_PREFIX=/harmony"
 Environment="PORT=5000"
 Environment="ENVIRONMENT=production"

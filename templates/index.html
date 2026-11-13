@@ -538,19 +538,29 @@
         }
 
         async function fetchActivities() {
+            let refreshDelay = 5000;
             try {
                 const response = await fetch('/api/activities');
                 const data = await response.json();
 
-                if (data.error) {
-                    showError(data.error);
+                if (!response.ok || data.error) {
+                    showError(data.error || 'Failed to fetch activities');
                     return;
                 }
 
-                activities = data.activities;
-                renderActivities();
+                if (!Array.isArray(data.activities)) {
+                    throw new Error('Invalid activity list');
+                }
+                if (JSON.stringify(activities) !== JSON.stringify(data.activities)) {
+                    activities = data.activities;
+                    renderActivities();
+                }
+                refreshDelay = 60000;
             } catch (error) {
                 showError('Failed to fetch activities: ' + error.message);
+            } finally {
+                // Schedule after completion so slow requests cannot overlap.
+                setTimeout(fetchActivities, refreshDelay);
             }
         }
 
