@@ -46,28 +46,23 @@ pip install -r requirements.txt
 
 ## Architecture
 
+### Separation of Concerns
+
+- Keep Hub discovery, connection lifecycle, async execution, device-role resolution, and command mapping in `harmony.py`. This module must work without Flask or an HTTP request context.
+- Keep routes, HTTP input validation, status codes, JSON responses, template rendering, and web image caching in `app.py`. Routes call the public Harmony functions; they must not access the Hub client, configuration, or event loop directly.
+- The Harmony interface accepts ordinary Python arguments and returns Python data or raises exceptions. It must not import Flask, return HTTP responses, or generate web URLs. Validate Hub-specific rules, such as activity existence and command availability, inside the module.
+- Keep browser layout, interaction, and display state in `templates/`. The browser calls the web API; it must not determine which Hub device receives a command.
+- Test Hub behavior in `tests/test_harmony.py` with a mocked client. Test HTTP behavior in `tests/test_app.py` by mocking the public Harmony interface; use client-level mocks only for deliberate integration tests.
+- Put new behavior in the layer that owns it. Do not duplicate device-selection rules in routes or introduce another abstraction unless a concrete use requires it.
+
 ### Core Components
 
-**app.py** - Main Flask application with the following architecture:
+**app.py** - Flask routes, request validation, templates, logging configuration, and activity image caching. Routes call `harmony.py` without accessing the Hub client or event loop directly:
 
 - **Blueprint Pattern**: All routes registered via Flask Blueprint for URL prefix support
   - Blueprint named 'harmony' contains all route handlers
   - Registered with configurable `url_prefix` from `URL_PREFIX` environment variable
   - Enables deployment at subpaths (e.g., `/harmony/*`) behind reverse proxy
-
-- **Async-Sync Bridge Pattern**: Flask (synchronous) wraps aioharmony (asynchronous) using `run_async()` helper
-  - Maintains a persistent event loop in a background thread
-  - Uses `threading.Event` to ensure loop is ready before executing coroutines (eliminates race conditions)
-  - Uses `asyncio.run_coroutine_threadsafe()` to execute async operations from sync Flask handlers
-  - Single global `harmony_client` instance maintained via `get_harmony_client()`
-  - Connection is persistent and reused across all requests
-  - **Connection Resilience**: Automatically detects and reconnects if Harmony Hub connection is lost
-
-- **Control Device Resolution**: Uses Harmony Hub's activity role fields to determine which device receives commands:
-  - `VolumeActivityRole`: Device for volume commands (amplifier/receiver)
-  - `PassThroughActivityRole`: Device for transport commands (separate media player)
-  - Falls back to `PlayMediaActivityRole` if PassThroughActivityRole not present
-  - This mapping ensures commands go to the correct device (e.g., play/pause to Squeezebox, volume to amplifier)
 
 - **Activity Image Caching**: Downloads activity images from Harmony Hub CDN and caches locally with validation
   - Images downloaded from `baseImageUri + imageKey` fields in activity config
@@ -95,6 +90,25 @@ pip install -r requirements.txt
   - All logs include timestamps and source information
   - Error logs include full tracebacks for debugging
   - Generic error messages sent to users while full details logged internally
+
+**harmony.py** - Flask-independent, synchronous Python interface to the Hub:
+- Public functions: `get_activities()`, `get_current_activity()`, `start_activity(activity_id)`, `power_off()`, `volume_control(action)`, `get_transport_controls()`, `transport_control(action)`, and `get_devices()`.
+- Owns discovery, client state, the async bridge, activity validation against Hub configuration, device-role resolution, and command mapping. Importing the module does not connect to the Hub.
+- Returns Python data or raises exceptions; Flask routes translate these into HTTP responses. Activity dictionaries are copied before the web layer adds image URLs.
+
+- **Async-Sync Bridge Pattern**: `harmony.py` wraps aioharmony (asynchronous) using the internal `run_async()` helper
+  - Maintains a persistent event loop in a background thread
+  - Uses `threading.Event` to ensure loop is ready before executing coroutines (eliminates race conditions)
+  - Uses `asyncio.run_coroutine_threadsafe()` to execute Hub operations from synchronous callers
+  - Single global `harmony_client` instance maintained via `get_harmony_client()`
+  - Connection is persistent and reused across all requests
+  - **Connection Resilience**: Automatically detects and reconnects if Harmony Hub connection is lost
+
+- **Control Device Resolution**: Uses Harmony Hub's activity role fields to determine which device receives commands:
+  - `VolumeActivityRole`: Device for volume commands (amplifier/receiver)
+  - `PassThroughActivityRole`: Device for transport commands (separate media player)
+  - Falls back to `PlayMediaActivityRole` if PassThroughActivityRole not present
+  - This mapping ensures commands go to the correct device (e.g., play/pause to Squeezebox, volume to amplifier)
 
 **templates/index.html** - Single-page web UI:
 - Vanilla JavaScript (no frameworks)
@@ -170,6 +184,7 @@ All routes are registered via Flask Blueprint with configurable `url_prefix`. Th
 - Runs via gunicorn WSGI server (not Flask's built-in server)
 - systemd service manages gunicorn process
 - The installable unit is `deployment/harmony-web.service`; it expects the app and virtual environment under `/var/lib/harmony-web` and uses one worker to share a Hub connection across request threads.
+- Keep the README's service installation instructions aligned with the supplied unit.
 - nginx reverse proxies external requests to gunicorn
 
 ### Harmony Hub Communication
@@ -256,7 +271,8 @@ python -m unittest discover tests -v
 - Error handling for invalid requests and connection failures
 
 **Test Files:**
-- `tests/test_app.py` - Main application tests (47 tests)
+- `tests/test_app.py` - HTTP routes, validation, split view, image caching, and API integration with a mocked Harmony interface
+- `tests/test_harmony.py` - Discovery, connection lifecycle, async bridge, and device/command selection without Flask
 
 **Key Test Areas:**
 - Mocked `HarmonyAPI` client for isolated testing

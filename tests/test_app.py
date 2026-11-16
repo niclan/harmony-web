@@ -5,88 +5,14 @@ import sys
 import os
 import asyncio
 import requests
-import socket
-import threading
 import tempfile
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from app import app, cache_activity_image, get_device_command
-
-
-class TestHubDiscovery(unittest.TestCase):
-    @patch('app.socket.socket')
-    def test_discovery_filters_and_deduplicates(self, mock_socket):
-        from app import discover_harmony_hub
-        sock = mock_socket.return_value.__enter__.return_value
-        valid = b'HTTP/1.1 200 OK\r\nst: urn:myharmony-com:device:harmony:1\r\n\r\n'
-        sock.recvfrom.side_effect = [
-            (b'garbage', ('192.168.1.2', 1900)),
-            (b'HTTP/1.1 200 OK\r\nST: unrelated\r\n', ('192.168.1.3', 1900)),
-            (valid, ('192.168.1.4', 1900)),
-            (valid, ('192.168.1.4', 1900)), socket.timeout(),
-        ]
-        self.assertEqual(discover_harmony_hub(), '192.168.1.4')
-        self.assertIn(b'M-SEARCH', sock.sendto.call_args.args[0])
-        mock_socket.return_value.__exit__.assert_called_once()
-
-    @patch('app.socket.socket')
-    def test_no_hub(self, mock_socket):
-        from app import discover_harmony_hub
-        mock_socket.return_value.__enter__.return_value.recvfrom.side_effect = socket.timeout()
-        with self.assertRaisesRegex(ConnectionError, 'No Harmony Hub'):
-            discover_harmony_hub()
-
-    @patch('app.socket.socket')
-    def test_multiple_hubs_require_explicit_ip(self, mock_socket):
-        from app import discover_harmony_hub
-        valid = b'HTTP/1.1 200 OK\r\nST: urn:myharmony-com:device:harmony:1\r\n'
-        mock_socket.return_value.__enter__.return_value.recvfrom.side_effect = [
-            (valid, ('192.168.1.4', 1900)),
-            (valid, ('192.168.1.5', 1900)), socket.timeout(),
-        ]
-        with self.assertRaisesRegex(ConnectionError, 'Multiple Harmony Hubs'):
-            discover_harmony_hub()
-
-
-class TestHubConnection(unittest.IsolatedAsyncioTestCase):
-    @patch('app.harmony_client', None)
-    @patch('app.HARMONY_IP', '192.168.1.10')
-    @patch('app.discover_harmony_hub')
-    @patch('app.HarmonyAPI')
-    async def test_explicit_ip_skips_discovery(self, api, discover):
-        from app import get_harmony_client
-        api.return_value.connect = AsyncMock(return_value=True)
-        self.assertIs(await get_harmony_client(), api.return_value)
-        api.assert_called_once_with(ip_address='192.168.1.10')
-        discover.assert_not_called()
-
-    @patch('app.harmony_client', None)
-    @patch('app.HARMONY_IP', '')
-    @patch('app.discover_harmony_hub', return_value='192.168.1.20')
-    @patch('app.HarmonyAPI')
-    async def test_discovered_client_is_reused(self, api, discover):
-        from app import get_harmony_client
-        api.return_value.connect = AsyncMock(return_value=True)
-        self.assertIs(await get_harmony_client(), api.return_value)
-        self.assertIs(await get_harmony_client(), api.return_value)
-        discover.assert_called_once()
-        api.assert_called_once_with(ip_address='192.168.1.20')
-
-    @patch('app.harmony_client', None)
-    @patch('app.HARMONY_IP', '')
-    @patch('app.discover_harmony_hub', side_effect=[ConnectionError('No hub'), '192.168.1.20'])
-    @patch('app.HarmonyAPI')
-    async def test_discovery_retries_after_failure(self, api, discover):
-        from app import get_harmony_client
-        api.return_value.connect = AsyncMock(return_value=True)
-        with self.assertRaises(ConnectionError):
-            await get_harmony_client()
-        self.assertIs(await get_harmony_client(), api.return_value)
-        self.assertEqual(discover.call_count, 2)
+from app import app, cache_activity_image
+from harmony import get_device_command
 
 
 class TestFlaskApp(unittest.TestCase):
@@ -104,7 +30,7 @@ class TestFlaskApp(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Logitech Harmony Hub Controller', response.data)
 
-    @patch('app.run_async')
+    @patch('app.harmony.get_activities')
     def test_get_activities(self, mock_run_async):
         """Test /api/activities endpoint."""
         # Mock the async response
@@ -118,7 +44,7 @@ class TestFlaskApp(unittest.TestCase):
         data = response.get_json()
         self.assertIn('activities', data)
 
-    @patch('app.run_async')
+    @patch('app.harmony.get_current_activity')
     def test_get_current_activity(self, mock_run_async):
         """Test /api/current_activity endpoint."""
         mock_run_async.return_value = ('123', 'Watch TV')
@@ -137,7 +63,7 @@ class TestFlaskApp(unittest.TestCase):
         data = response.get_json()
         self.assertIn('error', data)
 
-    @patch('app.run_async')
+    @patch('app.harmony.start_activity')
     def test_start_activity_invalid_id(self, mock_run_async):
         """Test /api/start_activity with invalid activity_id."""
         # Mock the validation to raise ValueError
@@ -149,7 +75,7 @@ class TestFlaskApp(unittest.TestCase):
         data = response.get_json()
         self.assertIn('error', data)
 
-    @patch('app.run_async')
+    @patch('app.harmony.power_off')
     def test_power_off(self, mock_run_async):
         """Test /api/power_off endpoint."""
         mock_run_async.return_value = True
@@ -367,7 +293,7 @@ class TestInputValidation(unittest.TestCase):
         app.testing = True
         client = app.test_client()
 
-        with patch('app.run_async') as mock_run_async:
+        with patch('app.harmony.start_activity') as mock_run_async:
             mock_run_async.side_effect = ValueError("Invalid activity_id: invalid")
 
             response = client.post('/api/start_activity',
@@ -474,7 +400,7 @@ class TestVolumeControl(unittest.TestCase):
         self.assertIn('error', data)
         self.assertIn('must be up, down, or mute', data['error'])
 
-    @patch('app.run_async')
+    @patch('app.harmony.volume_control')
     def test_volume_up_success(self, mock_run_async):
         """Test successful volume up command."""
         mock_run_async.return_value = True
@@ -485,7 +411,7 @@ class TestVolumeControl(unittest.TestCase):
         self.assertTrue(data['success'])
         self.assertEqual(data['action'], 'up')
 
-    @patch('app.run_async')
+    @patch('app.harmony.volume_control')
     def test_volume_down_success(self, mock_run_async):
         """Test successful volume down command."""
         mock_run_async.return_value = True
@@ -496,7 +422,7 @@ class TestVolumeControl(unittest.TestCase):
         self.assertTrue(data['success'])
         self.assertEqual(data['action'], 'down')
 
-    @patch('app.run_async')
+    @patch('app.harmony.volume_control')
     def test_volume_mute_success(self, mock_run_async):
         """Test successful mute command."""
         mock_run_async.return_value = True
@@ -507,7 +433,7 @@ class TestVolumeControl(unittest.TestCase):
         self.assertTrue(data['success'])
         self.assertEqual(data['action'], 'mute')
 
-    @patch('app.run_async')
+    @patch('app.harmony.volume_control')
     def test_volume_powered_off(self, mock_run_async):
         """Test volume control when powered off."""
         mock_run_async.side_effect = ValueError("No activity is running")
@@ -517,7 +443,7 @@ class TestVolumeControl(unittest.TestCase):
         data = response.get_json()
         self.assertIn('error', data)
 
-    @patch('app.run_async')
+    @patch('app.harmony.volume_control')
     def test_volume_no_volume_device(self, mock_run_async):
         """Test volume control when activity has no volume device."""
         mock_run_async.side_effect = ValueError("No volume device configured for this activity")
@@ -537,7 +463,7 @@ class TestTransportControls(unittest.TestCase):
         self.app.testing = True
         self.client = self.app.test_client()
 
-    @patch('app.run_async')
+    @patch('app.harmony.get_transport_controls')
     def test_transport_controls_available(self, mock_run_async):
         """Test transport controls available for activity."""
         mock_run_async.return_value = {
@@ -551,7 +477,7 @@ class TestTransportControls(unittest.TestCase):
         self.assertTrue(data['available'])
         self.assertEqual(data['controls'], ['play', 'pause', 'stop'])
 
-    @patch('app.run_async')
+    @patch('app.harmony.get_transport_controls')
     def test_transport_controls_powered_off(self, mock_run_async):
         """Test transport controls when powered off."""
         mock_run_async.return_value = {
@@ -565,7 +491,7 @@ class TestTransportControls(unittest.TestCase):
         self.assertFalse(data['available'])
         self.assertEqual(data['controls'], [])
 
-    @patch('app.run_async')
+    @patch('app.harmony.get_transport_controls')
     def test_transport_controls_not_available(self, mock_run_async):
         """Test transport controls not available for activity."""
         mock_run_async.return_value = {
@@ -606,8 +532,8 @@ class TestNextTransportControl(unittest.TestCase):
         self.assertEqual(get_device_command(self.config, 'squeezebox', ('Next', 'NextTrack')), 'Next')
         self.assertIsNone(get_device_command(self.config, 'cd-player', ('Next', 'NextTrack')))
 
-    @patch('app.get_harmony_client')
-    @patch('app.run_async')
+    @patch('harmony.get_harmony_client')
+    @patch('harmony.run_async')
     def test_next_is_offered_only_when_passthrough_device_supports_it(self, mock_run_async, mock_get_client):
         client = Mock(current_activity=('1', 'Squeezebox'), config=self.config)
         mock_get_client.return_value = client
@@ -618,8 +544,8 @@ class TestNextTransportControl(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('next', response.get_json()['controls'])
 
-    @patch('app.get_harmony_client')
-    @patch('app.run_async')
+    @patch('harmony.get_harmony_client')
+    @patch('harmony.run_async')
     def test_next_uses_passthrough_device(self, mock_run_async, mock_get_client):
         client = Mock(current_activity=('1', 'Squeezebox'), config=self.config)
         client.send_commands = AsyncMock()
@@ -633,8 +559,8 @@ class TestNextTransportControl(unittest.TestCase):
         self.assertEqual(command.device, 'squeezebox')
         self.assertEqual(command.command, 'Next')
 
-    @patch('app.get_harmony_client')
-    @patch('app.run_async')
+    @patch('harmony.get_harmony_client')
+    @patch('harmony.run_async')
     def test_nexttrack_uses_the_advertised_command_name(self, mock_run_async, mock_get_client):
         self.config['device'][0]['controlGroup'][0]['function'][0]['action'] = '{"command": "NextTrack"}'
         client = Mock(current_activity=('1', 'Squeezebox'), config=self.config)
@@ -673,7 +599,7 @@ class TestTransportControl(unittest.TestCase):
         self.assertIn('error', data)
         self.assertIn('must be play, pause, stop', data['error'])
 
-    @patch('app.run_async')
+    @patch('app.harmony.transport_control')
     def test_transport_play_success(self, mock_run_async):
         """Test successful play command."""
         mock_run_async.return_value = True
@@ -684,7 +610,7 @@ class TestTransportControl(unittest.TestCase):
         self.assertTrue(data['success'])
         self.assertEqual(data['action'], 'play')
 
-    @patch('app.run_async')
+    @patch('app.harmony.transport_control')
     def test_transport_pause_success(self, mock_run_async):
         """Test successful pause command."""
         mock_run_async.return_value = True
@@ -695,7 +621,7 @@ class TestTransportControl(unittest.TestCase):
         self.assertTrue(data['success'])
         self.assertEqual(data['action'], 'pause')
 
-    @patch('app.run_async')
+    @patch('app.harmony.transport_control')
     def test_transport_stop_success(self, mock_run_async):
         """Test successful stop command."""
         mock_run_async.return_value = True
@@ -706,7 +632,7 @@ class TestTransportControl(unittest.TestCase):
         self.assertTrue(data['success'])
         self.assertEqual(data['action'], 'stop')
 
-    @patch('app.run_async')
+    @patch('app.harmony.transport_control')
     def test_transport_playpause_success(self, mock_run_async):
         """Test successful playpause command."""
         mock_run_async.return_value = True
@@ -717,7 +643,7 @@ class TestTransportControl(unittest.TestCase):
         self.assertTrue(data['success'])
         self.assertEqual(data['action'], 'playpause')
 
-    @patch('app.run_async')
+    @patch('app.harmony.transport_control')
     def test_transport_powered_off(self, mock_run_async):
         """Test transport control when powered off."""
         mock_run_async.side_effect = ValueError("No activity is running")
@@ -727,7 +653,7 @@ class TestTransportControl(unittest.TestCase):
         data = response.get_json()
         self.assertIn('error', data)
 
-    @patch('app.run_async')
+    @patch('app.harmony.transport_control')
     def test_transport_no_transport_device(self, mock_run_async):
         """Test transport control when activity has no transport device."""
         mock_run_async.side_effect = ValueError("No transport control device configured for this activity")
@@ -747,7 +673,7 @@ class TestDevices(unittest.TestCase):
         self.app.testing = True
         self.client = self.app.test_client()
 
-    @patch('app.run_async')
+    @patch('app.harmony.get_devices')
     def test_get_devices(self, mock_run_async):
         """Test /api/devices endpoint."""
         mock_run_async.return_value = [
@@ -761,7 +687,7 @@ class TestDevices(unittest.TestCase):
         self.assertIn('devices', data)
         self.assertEqual(len(data['devices']), 2)
 
-    @patch('app.run_async')
+    @patch('app.harmony.get_devices')
     def test_get_devices_error(self, mock_run_async):
         """Test /api/devices error handling."""
         mock_run_async.side_effect = Exception("Connection failed")
@@ -800,7 +726,7 @@ class TestErrorHandling(unittest.TestCase):
         self.app.testing = True
         self.client = self.app.test_client()
 
-    @patch('app.run_async')
+    @patch('app.harmony.start_activity')
     def test_start_activity_connection_error(self, mock_run_async):
         """Test start_activity handles connection errors."""
         mock_run_async.side_effect = Exception("Connection timeout")
@@ -811,7 +737,7 @@ class TestErrorHandling(unittest.TestCase):
         data = response.get_json()
         self.assertIn('error', data)
 
-    @patch('app.run_async')
+    @patch('app.harmony.get_current_activity')
     def test_current_activity_error(self, mock_run_async):
         """Test current_activity handles errors."""
         mock_run_async.side_effect = Exception("Hub disconnected")
@@ -821,7 +747,7 @@ class TestErrorHandling(unittest.TestCase):
         data = response.get_json()
         self.assertIn('error', data)
 
-    @patch('app.run_async')
+    @patch('app.harmony.get_activities')
     def test_activities_error(self, mock_run_async):
         """Test activities endpoint handles errors."""
         mock_run_async.side_effect = Exception("Config not available")
@@ -950,55 +876,6 @@ class TestImageCachingEdgeCases(unittest.TestCase):
         )
 
         self.assertIsNone(result)
-
-
-class TestAsyncInfrastructure(unittest.TestCase):
-    """Test async infrastructure."""
-
-    def test_concurrent_requests_share_one_background_loop(self):
-        import app as module
-        barrier = threading.Barrier(8)
-
-        async def identify_loop():
-            return id(asyncio.get_running_loop())
-
-        def request():
-            barrier.wait(timeout=5)
-            return module.run_async(identify_loop())
-
-        with patch.object(module, 'loop', None), \
-             patch.object(module, 'loop_thread', None), \
-             patch.object(module, 'loop_ready', threading.Event()), \
-             patch.object(module, 'start_background_loop', wraps=module.start_background_loop) as start:
-            try:
-                with ThreadPoolExecutor(max_workers=8) as workers:
-                    results = list(workers.map(lambda _: request(), range(8)))
-                self.assertEqual(len(set(results)), 1)
-                start.assert_called_once()
-            finally:
-                if module.loop is not None and module.loop.is_running():
-                    module.loop.call_soon_threadsafe(module.loop.stop)
-                    module.loop_thread.join(timeout=5)
-                    module.loop.close()
-
-    @patch('app.asyncio.run_coroutine_threadsafe')
-    @patch('app.loop')
-    def test_run_async_timeout(self, mock_loop, mock_run_coroutine):
-        """Test run_async handles timeout."""
-        # Setup mock
-        mock_loop.is_running.return_value = True
-        future = Mock()
-        future.result.side_effect = asyncio.TimeoutError("Operation timed out")
-        mock_run_coroutine.return_value = future
-
-        async def dummy_coro():
-            return "test"
-
-        # This test documents expected behavior
-        # In practice, timeout would raise TimeoutError
-        with self.assertRaises(asyncio.TimeoutError):
-            from app import run_async
-            run_async(dummy_coro())
 
 
 if __name__ == '__main__':

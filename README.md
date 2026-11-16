@@ -4,8 +4,12 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-unittest-blue.svg)](tests/)
 
-A Python Flask web application that provides a web interface and REST
-API for controlling Logitech Harmony Hub activities.
+Reactive and mobile friendly web gui to controll a simple subset of a
+Logitech Harmony Hub.
+
+Or the tech angle: **Vibe coded** Python Flask web application that
+provides a web interface and REST API for controlling Logitech Harmony
+Hub activities.
 
 ## Features
 
@@ -62,7 +66,37 @@ python -m unittest discover tests -v
 node tests/test_frontend.js
 ```
 
+### Installing as a systemd service
+
+On a Linux host with systemd, Git, Python and the Python venv module installed:
+
+```bash
+sudo git clone https://github.com/niclan/harmony-web.git /var/lib/harmony-web
+cd /var/lib/harmony-web
+sudo python3 -m venv venv
+sudo venv/bin/pip install -r requirements.txt
+sudo mkdir -p static/images/activities
+sudo chown www-data:www-data static/images/activities
+sudo cp deployment/harmony-web.service /etc/systemd/system/
+
+# Adjust the unit if needed, for example to set HARMONY_IP
+sudoedit /etc/systemd/system/harmony-web.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now harmony-web
+sudo systemctl status harmony-web
+```
+
+The supplied unit runs as `www-data` from `/var/lib/harmony-web` and
+listens on `127.0.0.1:5000` with the `/harmony` URL prefix, ready for
+a fronting web proxy such as apache or nginx if you like.  Adjust the
+user/group if your distribution uses a different service account.
+View logs with `journalctl -u harmony-web -f`. See
+[deployment/README.md](deployment/README.md) for nginx configuration
+and more details.
+
 ### Using Docker
+
+Not really tested.
 
 ```bash
 # Set your Harmony Hub IP (recommended for Docker bridge networking)
@@ -72,27 +106,9 @@ export HARMONY_IP="192.168.1.123"
 docker-compose up -d
 ```
 
-## Harmony and Lyrion split view
-
-Open `http://<your-harmony-host>:5000/split` to show Harmony on top and
-the Lyrion music player underneath. Behind a reverse proxy with
-`URL_PREFIX=/harmony`, use `/harmony/split` instead.
-
-Click **Split settings** to open the controls:
-
-- Enter your **Lyrion URL** and click **Load**. The default is
-  `http://squeeze.langfeldt.net:9000`.
-- Move the **Harmony height** slider to adjust the space given to each view.
-- Click **Open Lyrion** to open the player in a separate tab.
-
-Settings are collapsed by default to leave more room for the two apps.
-Bookmark the resulting page URL to remember your Lyrion server, for example:
-`/split?lyrion_url=http%3A%2F%2Fsqueeze.langfeldt.net%3A9000`.
-The height adjustment applies to the current page and resets when reloaded.
-
-The browser connects to Lyrion directly. Lyrion must allow embedding, and an
-HTTPS Harmony page requires an HTTPS Lyrion URL to avoid mixed-content blocking.
-Use Open Lyrion if the embedded player is blocked.
+Docker bridge networks and routed networks may block discovery. Set an
+explicit `HARMONY_IP`, or use host networking on Linux (remove the
+Compose `ports` mapping and add `network_mode: host`).
 
 ## Configuration
 
@@ -104,17 +120,14 @@ Environment variables:
   - `dev`: DEBUG level logging, Flask debug and auto-reload enabled
 - `PORT` - Port to listen on (default: `5000`)
 
-### Production Deployment
+### Discovery
 
-Discovery runs on the first Hub request and waits up to five seconds. It requires
-local-network multicast access (UDP 239.255.255.250:1900). A discovered connection
-is reused; failed discovery is retried on the next request. If multiple Hubs are
-found, set `HARMONY_IP` to choose one. Existing installations with `HARMONY_IP`
-set must unset it to enable discovery.
-
-Docker bridge networks and routed networks may block discovery. Set an explicit
-`HARMONY_IP`, or use host networking on Linux (remove the Compose `ports` mapping
-and add `network_mode: host`).
+Discovery runs on the first Hub request and waits up to five
+seconds. It requires local-network multicast access (UDP
+239.255.255.250:1900). A discovered connection is reused; failed
+discovery is retried on the next request. If multiple Hubs are found,
+set `HARMONY_IP` to choose one. `HARMONY_IP` must be unset it to
+enable discovery.
 
 The application uses **gunicorn** as the production WSGI server (not Flask's built-in development server).
 
@@ -139,9 +152,42 @@ Docker deployments automatically use gunicorn in production mode.
 - Flask, aioharmony, requests, gunicorn (see [requirements.txt](requirements.txt) for versions)
 - Logitech Harmony Hub on your network
 
+## Harmony and Lyrion split view
+
+Since my main use case is to have the harmony web page in a brower tab
+to controll my sound while working I thought I'd put in a feature to
+show both harmony and the squeezebox webgui (currently Lyrion)
+together in one tab.
+
+Open `http://<your-harmony-host>:5000/split` to show Harmony on top and
+the Lyrion music player underneath.
+
+Click **Split settings** to open the controls:
+
+- Enter your **Lyrion URL** and click **Load**. The default is
+  `http://squeeze.langfeldt.net:9000`.
+- Move the **Harmony height** slider to adjust the space given to each view.
+- Click **Open Lyrion** to open the player in a separate tab.
+
+Settings are collapsed by default to leave more room for the two apps.
+Bookmark the resulting page URL to remember your Lyrion server, for example:
+`/split?lyrion_url=http%3A%2F%2Fsqueeze.langfeldt.net%3A9000`.
+The height adjustment applies to the current page and resets when reloaded.
+
+The browser connects to Lyrion directly. Lyrion must allow embedding, and an
+HTTPS Harmony page requires an HTTPS Lyrion URL to avoid mixed-content blocking.
+Use Open Lyrion if the embedded player is blocked.
+
 ## Architecture
 
-The application uses Flask (synchronous) with aioharmony (asynchronous) via an async-sync bridge pattern. A persistent event loop runs in a background thread to maintain stable connections with the Harmony Hub.
+`app.py` handles Flask routes, HTTP validation, templates, and activity image
+caching. `harmony.py` provides the Hub interface independently of Flask, including
+discovery, connection reuse, activity selection, volume, and playback commands.
+Its synchronous functions use aioharmony through a persistent background event loop.
+
+Other Python code can use the same interface directly, for example
+`import harmony; harmony.volume_control('up')`. Set `HARMONY_IP` before importing
+to choose a Hub, or leave it unset for discovery on the first call.
 
 **Control Mapping:**
 - **Volume controls**: Use `VolumeActivityRole` from activity configuration
@@ -184,6 +230,7 @@ limitations under the License.
 ## Authors
 
 - Nicolai Langfeldt
+- Codex
 - Claude (Anthropic AI Assistant)
 
 ## Contributing
