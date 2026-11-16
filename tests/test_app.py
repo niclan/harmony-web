@@ -7,6 +7,8 @@ import asyncio
 import requests
 import socket
 import threading
+import tempfile
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 # Add parent directory to path
@@ -158,8 +160,76 @@ class TestFlaskApp(unittest.TestCase):
         self.assertTrue(data['success'])
 
 
+class TestSplitView(unittest.TestCase):
+    def setUp(self):
+        self.client = app.test_client()
+
+    @patch('app.requests.get')
+    def test_default_view_has_harmony_above_lyrion(self, get):
+        from html.parser import HTMLParser
+        class Frames(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.frames = []
+            def handle_starttag(self, tag, attrs):
+                if tag == 'iframe':
+                    self.frames.append(dict(attrs))
+        response = self.client.get('/split')
+        self.assertEqual(response.status_code, 200)
+        parser = Frames()
+        parser.feed(response.get_data(as_text=True))
+        self.assertEqual([frame['src'] for frame in parser.frames],
+                         ['/', 'http://squeeze.langfeldt.net:9000'])
+        self.assertIn('sandbox', parser.frames[1])
+        get.assert_not_called()
+
+    def test_settings_are_collapsed_except_on_invalid_url(self):
+        page = self.client.get('/split').get_data(as_text=True)
+        self.assertIn('<details>', page)
+        self.assertIn('<summary>Split settings</summary>', page)
+        self.assertLess(page.index('<details>'), page.index('<form '))
+        self.assertLess(page.index('</form>'), page.index('</details>'))
+        self.assertLess(page.index('</details>'), page.index('<main '))
+        invalid = self.client.get('/split', query_string={'lyrion_url': 'invalid'})
+        self.assertIn('<details open>', invalid.get_data(as_text=True))
+
+    def test_custom_url_is_escaped(self):
+        url = 'https://music.example:9000/?q="\'><script>alert(1)</script>'
+        response = self.client.get('/split', query_string={'lyrion_url': url})
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertNotIn('<script>alert(1)</script>', page)
+        self.assertIn('&lt;script&gt;', page)
+
+    def test_invalid_urls_do_not_create_frames(self):
+        for url in ['', 'javascript:alert(1)', '//music.example', 'file:///etc/passwd',
+                    'https://user:password@music.example/', 'http://music.example:bad',
+                    'http://music.example:99999', 'http://music.example/ with spaces']:
+            with self.subTest(url=url):
+                response = self.client.get('/split', query_string={'lyrion_url': url})
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn('<iframe', response.get_data(as_text=True))
+
+    def test_prefixed_harmony_frame_and_form(self):
+        from flask import Flask
+        from app import bp
+        prefixed = Flask(__name__, template_folder=str(Path(__file__).resolve().parents[1] / 'templates'))
+        prefixed.register_blueprint(bp, url_prefix='/harmony')
+        response = prefixed.test_client().get('/harmony/split')
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('src="/harmony/"', page)
+        self.assertIn('action="/harmony/split"', page)
+
+
 class TestImageCaching(unittest.TestCase):
     """Test activity image caching functionality."""
+
+    def setUp(self):
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        previous = os.getcwd()
+        os.chdir(directory)
+        self.addCleanup(os.chdir, previous)
 
     @patch('app.detect_image_type')
     @patch('app.requests.get')
@@ -170,6 +240,8 @@ class TestImageCaching(unittest.TestCase):
         mock_response = Mock()
         mock_response.content = b'fake_image_data'
         mock_response.raise_for_status = Mock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = [mock_response.content]
         mock_get.return_value = mock_response
         mock_detect.return_value = 'png'  # Valid image type
 
@@ -209,6 +281,79 @@ class TestImageCaching(unittest.TestCase):
 
         self.assertIsNotNone(result)
         self.assertIn('/static/images/activities/123.png', result)
+
+    @patch('app.requests.get')
+    def test_rejects_redirect_without_fetching_destination(self, get):
+        response = get.return_value
+        response.status_code = 302
+        response.headers = {'Location': 'http://127.0.0.1/private'}
+        self.assertIsNone(cache_activity_image('123', 'https://home.myharmony.com/', 'a.png'))
+        get.assert_called_once_with('https://home.myharmony.com/a.png', timeout=10,
+                                    stream=True, allow_redirects=False)
+        response.iter_content.assert_not_called()
+        response.close.assert_called_once()
+
+    @patch('app.requests.get')
+    def test_rejects_unsafe_urls_and_filenames(self, get):
+        for activity_id, base, key in [
+            ('123', 'http://home.myharmony.com/', 'a.png'),
+            ('123', 'https://home.myharmony.com', '.evil.com/a.png'),
+            ('../escape', 'https://home.myharmony.com/', 'a.png'),
+            ('123', 'https://home.myharmony.com/', 'a.html'),
+        ]:
+            with self.subTest(base=base, key=key, activity_id=activity_id):
+                self.assertIsNone(cache_activity_image(activity_id, base, key))
+        get.assert_not_called()
+
+    @patch('app.requests.get')
+    def test_stream_limit_stops_early_and_cleans_up(self, get):
+        response = get.return_value
+        response.status_code = 200
+        consumed = []
+        def chunks(**kwargs):
+            for i in range(7):
+                consumed.append(i)
+                yield b'x' * (1024 * 1024)
+        response.iter_content.side_effect = chunks
+        self.assertIsNone(cache_activity_image('123', 'https://home.myharmony.com/', 'a.png'))
+        self.assertEqual(len(consumed), 6)
+        self.assertEqual(list(Path('static/images/activities').iterdir()), [])
+        response.close.assert_called_once()
+
+    @patch('app.requests.get')
+    def test_real_signature_and_unique_temporary_files(self, get):
+        response = get.return_value
+        response.status_code = 200
+        response.iter_content.side_effect = lambda **kwargs: iter([b'\x89PNG\r\n\x1a\n' + b'data'])
+        real_tempfile = tempfile.NamedTemporaryFile
+        names = []
+        def create_temporary(**kwargs):
+            f = real_tempfile(**kwargs)
+            names.append(f.name)
+            return f
+        with patch('app.tempfile.NamedTemporaryFile', side_effect=create_temporary) as temporary:
+            for _ in range(2):
+                self.assertEqual(cache_activity_image('123', 'https://home.myharmony.com/', 'a.png'),
+                                 '/static/images/activities/123.png')
+                Path('static/images/activities/123.png').unlink()
+            self.assertEqual(temporary.call_count, 2)
+            self.assertEqual(len(set(names)), 2)
+        self.assertEqual(list(Path('static/images/activities').iterdir()), [])
+
+    @patch('app.requests.get')
+    def test_invalid_and_interrupted_images_leave_no_files(self, get):
+        response = get.return_value
+        response.status_code = 200
+        for interrupted in (False, True):
+            def chunks(**kwargs):
+                yield b'not an image'
+                if interrupted:
+                    raise requests.exceptions.ConnectionError('stream interrupted')
+            response.iter_content.side_effect = chunks
+            with self.subTest(interrupted=interrupted):
+                self.assertIsNone(cache_activity_image('123', 'https://home.myharmony.com/', 'a.png'))
+                self.assertEqual(list(Path('static/images/activities').iterdir()), [])
+        self.assertEqual(response.close.call_count, 2)
 
 
 class TestInputValidation(unittest.TestCase):
@@ -690,6 +835,12 @@ class TestErrorHandling(unittest.TestCase):
 class TestImageCachingEdgeCases(unittest.TestCase):
     """Test additional image caching edge cases."""
 
+    def setUp(self):
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        previous = os.getcwd()
+        os.chdir(directory)
+        self.addCleanup(os.chdir, previous)
+
     @patch('app.requests.get')
     @patch('app.Path.exists')
     def test_cache_activity_image_network_timeout(self, mock_exists, mock_get):
@@ -712,6 +863,8 @@ class TestImageCachingEdgeCases(unittest.TestCase):
         mock_exists.return_value = False
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Not Found")
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = [mock_response.content]
         mock_get.return_value = mock_response
 
         result = cache_activity_image(
@@ -734,13 +887,15 @@ class TestImageCachingEdgeCases(unittest.TestCase):
 
     @patch('app.requests.get')
     @patch('app.Path.exists')
-    @patch('builtins.open', side_effect=PermissionError("Permission denied"))
+    @patch('app.tempfile.NamedTemporaryFile', side_effect=PermissionError("Permission denied"))
     def test_cache_activity_image_write_permission_error(self, mock_open, mock_exists, mock_get):
         """Test image caching handles file write permission errors."""
         mock_exists.return_value = False
         mock_response = Mock()
         mock_response.content = b'fake_image_data'
         mock_response.raise_for_status = Mock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = [mock_response.content]
         mock_get.return_value = mock_response
 
         result = cache_activity_image(
@@ -760,6 +915,8 @@ class TestImageCachingEdgeCases(unittest.TestCase):
         mock_response = Mock()
         mock_response.content = b'fake_data'
         mock_response.raise_for_status = Mock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = [mock_response.content]
         mock_get.return_value = mock_response
         mock_detect.return_value = None  # Invalid image type
 
@@ -781,6 +938,8 @@ class TestImageCachingEdgeCases(unittest.TestCase):
         # Create image larger than 5MB limit
         mock_response.content = b'x' * (6 * 1024 * 1024)
         mock_response.raise_for_status = Mock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = [mock_response.content]
         mock_get.return_value = mock_response
         mock_detect.return_value = 'png'
 

@@ -16,30 +16,31 @@ The application runs using **gunicorn** (a production-grade WSGI server) behind 
 ### 1. Clone and Setup Application
 
 ```bash
-# Clone repository to /opt
-sudo git clone <repository-url> /opt/harmony-web
-cd /opt/harmony-web
+# Clone repository to /var/lib
+sudo git clone <repository-url> /var/lib/harmony-web
+cd /var/lib/harmony-web
 
 # Create virtual environment
 sudo python3 -m venv venv
 sudo venv/bin/pip install -r requirements.txt
 
 # Set ownership
-sudo chown -R www-data:www-data /opt/harmony-web
+sudo chown -R www-data:www-data /var/lib/harmony-web
 ```
 
 ### 2. Configure Environment Variables
 
-Edit `/opt/harmony-web/deployment/harmony-web.service` and set:
+Edit `/var/lib/harmony-web/deployment/harmony-web.service` and set:
 - `HARMONY_IP` - Optional Hub IP override; leave commented out for automatic SSDP discovery (requires local-network multicast access)
 - `URL_PREFIX` - URL prefix (default: /harmony)
-- `FLASK_DEBUG` - Debug mode (default: False)
+- `ENVIRONMENT` - Keep `production` for service deployments
+- `PORT` - Local listening port (default: 5000)
 
 ### 3. Install systemd Service
 
 ```bash
 # Copy service file
-sudo cp /opt/harmony-web/deployment/harmony-web.service /etc/systemd/system/
+sudo cp /var/lib/harmony-web/deployment/harmony-web.service /etc/systemd/system/
 
 # Reload systemd
 sudo systemctl daemon-reload
@@ -102,17 +103,12 @@ Access the application at: `http://your-server/harmony`
 
 The systemd service runs gunicorn with the following configuration:
 
-- **Workers:** 2 (adjust based on CPU cores, formula: `2 * cores + 1`)
+- **Workers:** 1 (shares one Hub connection across request threads)
 - **Threads:** 4 per worker (handles async I/O to Harmony Hub efficiently)
 - **Bind:** 127.0.0.1:5000 (localhost only, nginx proxies external requests)
-- **Timeout:** 60 seconds (allows time for Harmony Hub responses)
+- **Timeout:** 75 seconds (longer than the application’s 60-second request wait)
 
-To adjust workers/threads, edit `/etc/systemd/system/harmony-web.service`:
-
-```bash
-# For a 4-core server, use 9 workers
-ExecStart=/opt/harmony-web/venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 9 --threads 4 ...
-```
+Edit `/etc/systemd/system/harmony-web.service` to change the bind address, port, or thread count. Keep one worker so requests share a Hub connection.
 
 After changes:
 ```bash
@@ -137,7 +133,7 @@ sudo systemctl restart harmony-web
 
 ```bash
 # Pull latest changes
-cd /opt/harmony-web
+cd /var/lib/harmony-web
 sudo git pull
 
 # Restart service
@@ -179,8 +175,8 @@ sudo netstat -tulpn | grep 5000
 
 ```bash
 # Fix ownership
-sudo chown -R www-data:www-data /opt/harmony-web
+sudo chown -R www-data:www-data /var/lib/harmony-web
 
 # Ensure writable cache directory
-sudo chmod 755 /opt/harmony-web/static/images/activities
+sudo chmod 755 /var/lib/harmony-web/static/images/activities
 ```

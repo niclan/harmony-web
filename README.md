@@ -72,6 +72,18 @@ export HARMONY_IP="192.168.1.123"
 docker-compose up -d
 ```
 
+## Harmony and Lyrion split view
+
+Open `/split` (or `/harmony/split` when deployed with that prefix) to show
+Harmony on top and Lyrion underneath. Enter your Lyrion URL and press Load;
+the default is `http://squeeze.langfeldt.net:9000`. The height slider adjusts
+the two views. Bookmark the resulting URL to keep your chosen server, for example:
+`/split?lyrion_url=http%3A%2F%2Fsqueeze.langfeldt.net%3A9000`.
+
+The browser connects to Lyrion directly. Lyrion must allow embedding, and an
+HTTPS Harmony page requires an HTTPS Lyrion URL to avoid mixed-content blocking.
+Use Open Lyrion if the embedded player is blocked.
+
 ## Configuration
 
 Environment variables:

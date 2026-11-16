@@ -381,15 +381,15 @@
                     <span class="emoji">⏭️</span>
                     <span>Next</span>
                 </button>
-                <button class="volume-controls" onclick="volumeControl('up', event)">
+                <button class="volume-controls" onclick="volumeControl('up')">
                     <span class="emoji">🔊</span>
                     <span>Louder</span>
                 </button>
-                <button class="volume-controls" onclick="volumeControl('down', event)">
+                <button class="volume-controls" onclick="volumeControl('down')">
                     <span class="emoji">🔉</span>
                     <span>Quieter</span>
                 </button>
-                <button class="volume-controls" onclick="volumeControl('mute', event)">
+                <button class="volume-controls" onclick="volumeControl('mute')">
                     <span class="emoji">🔇</span>
                     <span>Mute</span>
                 </button>
@@ -526,12 +526,6 @@
             console.log('Media Session configured');
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
         function showError(message) {
             const errorDiv = document.getElementById('error');
             errorDiv.textContent = message;
@@ -633,37 +627,34 @@
             }
 
             container.className = 'activities';
-            container.innerHTML = activities.map(activity => {
-                const isActive = activity.id === currentActivityId;
-                const isPowerOff = activity.id === '-1';
-                const imageUrl = activity.cachedImageUrl;
+            const cards = activities.map(activity => {
+                const card = document.createElement('div');
+                card.className = 'activity-card' + (activity.id === currentActivityId ? ' active' : '');
+                card.id = `activity-${activity.id}`;
+                card.addEventListener('click', event => startActivity(activity.id, activity.label, event));
 
-                // Get fallback icon based on activity type
-                function getFallbackIcon(type) {
-                    const iconMap = {
-                        'VirtualCdMulti': '🎵',      // Music/Audio
-                        'VirtualDvd': '📀',           // DVD/Video
-                        'VirtualTelevisionN': '📺',   // TV
-                        'PowerOff': '⏻',             // Power off
-                        'VirtualGeneric': '⚡',       // Generic
-                    };
-                    return iconMap[type] || '⚡';
+                const iconMap = {
+                    'VirtualCdMulti': '🎵',
+                    'VirtualDvd': '📀',
+                    'VirtualTelevisionN': '📺',
+                    'PowerOff': '⏻',
+                    'VirtualGeneric': '⚡',
+                };
+                const image = document.createElement(activity.cachedImageUrl ? 'img' : 'div');
+                if (activity.cachedImageUrl) {
+                    image.src = activity.cachedImageUrl;
+                    image.alt = activity.label;
+                    image.className = 'activity-image';
+                } else {
+                    image.className = 'activity-icon-fallback';
+                    image.textContent = iconMap[activity.type] || '⚡';
                 }
-
-                // Image or fallback icon
-                const imageHtml = imageUrl
-                    ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(activity.label)}" class="activity-image">`
-                    : `<div class="activity-icon-fallback">${getFallbackIcon(activity.type)}</div>`;
-
-                return `
-                    <div class="activity-card ${isActive ? 'active' : ''}"
-                         id="activity-${escapeHtml(activity.id)}"
-                         onclick="startActivity('${escapeHtml(activity.id)}', '${escapeHtml(activity.label)}', event)">
-                        ${imageHtml}
-                        <h3>${escapeHtml(activity.label)}</h3>
-                    </div>
-                `;
-            }).join('');
+                const label = document.createElement('h3');
+                label.textContent = activity.label;
+                card.append(image, label);
+                return card;
+            });
+            container.replaceChildren(...cards);
         }
 
         async function startActivity(activityId, activityName, event) {
@@ -727,12 +718,7 @@
             }
         }
 
-        async function volumeControl(action, event) {
-            const buttonElement = event ? event.currentTarget : null;
-            if (buttonElement) {
-                buttonElement.classList.add('processing');
-            }
-
+        async function volumeControl(action) {
             try {
                 const response = await fetch('/api/volume', {
                     method: 'POST',
@@ -750,12 +736,6 @@
                 }
             } catch (error) {
                 showError('Failed to control volume: ' + error.message);
-            } finally {
-                if (buttonElement) {
-                    setTimeout(() => {
-                        buttonElement.classList.remove('processing');
-                    }, 300);
-                }
             }
         }
 
@@ -922,7 +902,7 @@
                     if (!isPowerOff) {
                         const muteBtn = document.querySelector('.volume-controls:last-child');
                         if (!muteBtn.disabled) {
-                            volumeControl('mute', null);
+                            volumeControl('mute');
                         }
                     }
                     break;
@@ -930,14 +910,14 @@
                 case 'ArrowUp':
                     // Arrow Up: volume up
                     if (!isPowerOff) {
-                        volumeControl('up', null);
+                        volumeControl('up');
                     }
                     break;
 
                 case 'ArrowDown':
                     // Arrow Down: volume down
                     if (!isPowerOff) {
-                        volumeControl('down', null);
+                        volumeControl('down');
                     }
                     break;
 

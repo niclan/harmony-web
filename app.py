@@ -28,6 +28,7 @@ import logging
 import threading
 import socket
 import time
+import tempfile
 from ipaddress import IPv4Address
 from pathlib import Path
 from urllib.parse import urlparse
@@ -232,83 +233,61 @@ def cache_activity_image(activity_id, base_uri, image_key):
     if not image_key:
         return None
 
-    # Validate the base_uri domain is from Logitech/Harmony CDN
-    if not base_uri:
-        logger.warning(f"Empty base_uri for activity {activity_id}, skipping image download")
-        return None
-
     try:
-        parsed_url = urlparse(base_uri)
-        domain = parsed_url.netloc.lower()
-
-        if domain not in ALLOWED_IMAGE_DOMAINS:
-            logger.warning(
-                f"Rejected image download from untrusted domain '{domain}' "
-                f"for activity {activity_id}. Only Logitech/Harmony CDN domains are allowed."
-            )
+        full_url = base_uri + image_key if base_uri else ''
+        parsed_url = urlparse(full_url)
+        if (parsed_url.scheme != 'https' or
+                parsed_url.netloc.lower() not in ALLOWED_IMAGE_DOMAINS):
+            logger.warning("Rejected untrusted activity image URL")
             return None
-    except Exception as e:
-        logger.warning(f"Failed to parse base_uri '{base_uri}' for activity {activity_id}: {e}")
+        if not isinstance(activity_id, str) or not activity_id.isascii() or not activity_id.isdigit():
+            return None
+        file_extension = Path(parsed_url.path).suffix.lower() or '.png'
+        if file_extension not in {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}:
+            return None
+    except (TypeError, ValueError):
         return None
 
-    # Create cache directory if it doesn't exist
     cache_dir = Path('static/images/activities')
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    # Use activity ID as filename to ensure uniqueness
-    file_extension = Path(image_key).suffix or '.png'
     local_filename = f"{activity_id}{file_extension}"
     local_path = cache_dir / local_filename
-
-    # If already cached, return the path
-    if local_path.exists():
-        return f'/static/images/activities/{local_filename}'
-
-    # Download the image
+    temp_path = None
     try:
-        full_url = base_uri + image_key
-        logger.debug(f"Downloading activity image from {full_url}")
-        response = requests.get(full_url, timeout=10)
-        response.raise_for_status()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        if local_path.exists():
+            return f'/static/images/activities/{local_filename}'
 
-        # Validate file size (max 5MB)
-        MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
-        content_length = len(response.content)
-        if content_length > MAX_IMAGE_SIZE:
-            logger.warning(
-                f"Image too large for activity {activity_id}: {content_length} bytes "
-                f"(max {MAX_IMAGE_SIZE} bytes)"
-            )
-            return None
+        response = requests.get(full_url, timeout=10, stream=True, allow_redirects=False)
+        try:
+            # Reject redirects rather than fetching an unchecked destination.
+            if 300 <= response.status_code < 400:
+                return None
+            response.raise_for_status()
+            content_length = 0
+            with tempfile.NamedTemporaryFile(dir=cache_dir, suffix='.tmp', delete=False) as f:
+                temp_path = Path(f.name)
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    content_length += len(chunk)
+                    if content_length > 5 * 1024 * 1024:
+                        logger.warning("Activity image exceeds size limit")
+                        return None
+                    f.write(chunk)
+        finally:
+            response.close()
 
-        # Save to temporary location first for validation
-        temp_path = local_path.with_suffix('.tmp')
-        with open(temp_path, 'wb') as f:
-            f.write(response.content)
-
-        # Validate image file type by magic bytes
         image_type = detect_image_type(temp_path)
-        if image_type not in ['png', 'jpeg', 'gif', 'webp', 'bmp']:
-            logger.warning(
-                f"Invalid image type for activity {activity_id}: {image_type}. "
-                f"Only PNG, JPEG, GIF, WebP, and BMP are allowed."
-            )
-            temp_path.unlink()  # Delete invalid file
+        if image_type not in {'png', 'jpeg', 'gif', 'webp', 'bmp'}:
+            logger.warning("Invalid activity image type")
             return None
-
-        # Move validated file to final location
-        temp_path.rename(local_path)
-
-        logger.info(f"Cached activity image: {local_filename} (type: {image_type}, size: {content_length} bytes)")
+        temp_path.replace(local_path)
+        logger.info("Cached activity image: %s (size: %s bytes)", local_filename, content_length)
         return f'/static/images/activities/{local_filename}'
-
-    except Exception as e:
-        logger.warning(f"Failed to cache activity image from {full_url}: {e}")
-        # Clean up any temporary files
-        temp_path = local_path.with_suffix('.tmp')
-        if temp_path.exists():
-            temp_path.unlink()
+    except Exception:
+        logger.warning("Failed to cache activity image", exc_info=True)
         return None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 # Create blueprint for all routes
@@ -319,6 +298,23 @@ bp = Blueprint('harmony', __name__)
 def index():
     """Serve the main web interface."""
     return render_template('index.html')
+
+
+@bp.route('/split')
+def split_view():
+    """Show Harmony above a user-selected Lyrion web interface."""
+    lyrion_url = request.args.get('lyrion_url', 'http://squeeze.langfeldt.net:9000').strip()
+    try:
+        parsed = urlparse(lyrion_url)
+        if (parsed.scheme not in {'http', 'https'} or not parsed.hostname or
+                parsed.username is not None or parsed.password is not None or
+                any(character.isspace() for character in lyrion_url)):
+            raise ValueError('Invalid URL')
+        parsed.port  # Validate the optional port.
+    except ValueError:
+        return render_template('split.html', lyrion_url=lyrion_url,
+                               error='Enter an HTTP or HTTPS URL without credentials.'), 400
+    return render_template('split.html', lyrion_url=lyrion_url)
 
 
 @bp.route('/api/activities', methods=['GET'])

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to LLMs when working with code in this repository.
 
 ## Project Overview
 
@@ -42,8 +42,6 @@ docker run -d -p 5000:5000 -e HARMONY_IP="192.168.1.123" harmony-controller
 ```bash
 # Install dependencies
 pip install -r requirements.txt
-
-# Dependencies defined in requirements.txt (see file for current versions)
 ```
 
 ## Architecture
@@ -117,13 +115,21 @@ pip install -r requirements.txt
   - Smart UI updates that avoid flickering by checking state changes before DOM manipulation
   - Transport buttons auto-enable/disable based on PassThroughActivityRole availability
   - Volume and power buttons disabled when no activity is active
-  - Button click feedback with processing state (scale/opacity animations)
+  - Volume controls accept rapid repeated presses using native press feedback; never block clicks while requests are pending
+  - Other button click feedback uses a processing state (scale/opacity animations)
   - Grace period after activity changes to prevent auto-refresh interference
 - **Layout**:
   - Responsive grid layout for activities (auto-fill based on screen width)
   - Single-row grid layout for control buttons
   - Flexbox header with power button and centered title
 - Inline CSS and JS (no external dependencies)
+
+### Split View
+
+- `GET /split` embeds Harmony above Lyrion with adjustable heights.
+- The `lyrion_url` query parameter selects the server; only HTTP(S) URLs without credentials are accepted. URLs are escaped by Jinja, and the server never fetches them.
+- Split settings use a native details toggle, collapsed by default and opened for URL validation errors.
+- `templates/split.html` contains the layout; browser embedding policies and mixed-content rules still apply.
 
 ### API Endpoints
 
@@ -163,6 +169,7 @@ All routes are registered via Flask Blueprint with configurable `url_prefix`. Th
 - See `deployment/` directory for nginx config and systemd service files
 - Runs via gunicorn WSGI server (not Flask's built-in server)
 - systemd service manages gunicorn process
+- The installable unit is `deployment/harmony-web.service`; it expects the app and virtual environment under `/var/lib/harmony-web` and uses one worker to share a Hub connection across request threads.
 - nginx reverse proxies external requests to gunicorn
 
 ### Harmony Hub Communication
@@ -265,7 +272,7 @@ python -m unittest discover tests -v
 ## ALWAYS REMEMBER
 
 - Update test suite
-- Update CLAUDE.md - but avoid line numbers, and replicating
+- Update AGENTS.md - but avoid line numbers, and replicating
   information you have in other files such as the version numbers
   given in requirements.txt and so on.
 
@@ -282,6 +289,9 @@ The application implements multiple layers of security appropriate for local net
 - Prevents: Type confusion attacks, SQL injection (N/A - no database), command injection
 
 **Image Security:**
+- Validate the complete image URL; require HTTPS on an approved CDN and reject redirects
+- Enforce the size limit while streaming, close responses, and use unique temporary files with cleanup
+- Restrict cache filenames to numeric activity IDs and supported image extensions
 - Domain whitelist: Only Logitech/Harmony CDN domains accepted
 - File size limit: 5MB maximum per image
 - Magic byte validation: PNG, JPEG, GIF, WebP, BMP only
@@ -325,4 +335,4 @@ When writing new code:
 - Return generic error messages to users, log full details internally
 - Use INFO level logging for production, DEBUG only for development
 - Never execute shell commands with user input
-- Sanitize all user-controlled data before HTML output (use `escapeHtml()` in JavaScript)
+- Render hub-provided text with DOM `textContent` and attach event listeners; never interpolate it into HTML attributes or inline JavaScript.
