@@ -170,23 +170,6 @@ def index():
     return render_template('index.html')
 
 
-@bp.route('/split')
-def split_view():
-    """Show Harmony above a user-selected Lyrion web interface."""
-    lyrion_url = request.args.get('lyrion_url', 'http://squeeze.langfeldt.net:9000').strip()
-    try:
-        parsed = urlparse(lyrion_url)
-        if (parsed.scheme not in {'http', 'https'} or not parsed.hostname or
-                parsed.username is not None or parsed.password is not None or
-                any(character.isspace() for character in lyrion_url)):
-            raise ValueError('Invalid URL')
-        parsed.port  # Validate the optional port.
-    except ValueError:
-        return render_template('split.html', lyrion_url=lyrion_url,
-                               error='Enter an HTTP or HTTPS URL without credentials.'), 400
-    return render_template('split.html', lyrion_url=lyrion_url)
-
-
 @bp.route('/api/activities', methods=['GET'])
 def get_activities():
     """Get list of all available Harmony activities."""

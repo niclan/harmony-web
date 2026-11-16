@@ -152,32 +152,6 @@ Docker deployments automatically use gunicorn in production mode.
 - Flask, aioharmony, requests, gunicorn (see [requirements.txt](requirements.txt) for versions)
 - Logitech Harmony Hub on your network
 
-## Harmony and Lyrion split view
-
-Since my main use case is to have the harmony web page in a brower tab
-to controll my sound while working I thought I'd put in a feature to
-show both harmony and the squeezebox webgui (currently Lyrion)
-together in one tab.
-
-Open `http://<your-harmony-host>:5000/split` to show Harmony on top and
-the Lyrion music player underneath.
-
-Click **Split settings** to open the controls:
-
-- Enter your **Lyrion URL** and click **Load**. The default is
-  `http://squeeze.langfeldt.net:9000`.
-- Move the **Harmony height** slider to adjust the space given to each view.
-- Click **Open Lyrion** to open the player in a separate tab.
-
-Settings are collapsed by default to leave more room for the two apps.
-Bookmark the resulting page URL to remember your Lyrion server, for example:
-`/split?lyrion_url=http%3A%2F%2Fsqueeze.langfeldt.net%3A9000`.
-The height adjustment applies to the current page and resets when reloaded.
-
-The browser connects to Lyrion directly. Lyrion must allow embedding, and an
-HTTPS Harmony page requires an HTTPS Lyrion URL to avoid mixed-content blocking.
-Use Open Lyrion if the embedded player is blocked.
-
 ## Architecture
 
 `app.py` handles Flask routes, HTTP validation, templates, and activity image
@@ -188,11 +162,6 @@ Its synchronous functions use aioharmony through a persistent background event l
 Other Python code can use the same interface directly, for example
 `import harmony; harmony.volume_control('up')`. Set `HARMONY_IP` before importing
 to choose a Hub, or leave it unset for discovery on the first call.
-
-**Control Mapping:**
-- **Volume controls**: Use `VolumeActivityRole` from activity configuration
-- **Transport controls**: Use `PassThroughActivityRole` (separate media player) or `PlayMediaActivityRole` (integrated player)
-- Buttons automatically enable/disable based on activity capabilities
 
 ## Security
 

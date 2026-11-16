@@ -30,6 +30,9 @@ class TestFlaskApp(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Logitech Harmony Hub Controller', response.data)
 
+    def test_split_route_removed(self):
+        self.assertEqual(self.client.get('/split').status_code, 404)
+
     @patch('app.harmony.get_activities')
     def test_get_activities(self, mock_run_async):
         """Test /api/activities endpoint."""
@@ -84,68 +87,6 @@ class TestFlaskApp(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertTrue(data['success'])
-
-
-class TestSplitView(unittest.TestCase):
-    def setUp(self):
-        self.client = app.test_client()
-
-    @patch('app.requests.get')
-    def test_default_view_has_harmony_above_lyrion(self, get):
-        from html.parser import HTMLParser
-        class Frames(HTMLParser):
-            def __init__(self):
-                super().__init__()
-                self.frames = []
-            def handle_starttag(self, tag, attrs):
-                if tag == 'iframe':
-                    self.frames.append(dict(attrs))
-        response = self.client.get('/split')
-        self.assertEqual(response.status_code, 200)
-        parser = Frames()
-        parser.feed(response.get_data(as_text=True))
-        self.assertEqual([frame['src'] for frame in parser.frames],
-                         ['/', 'http://squeeze.langfeldt.net:9000'])
-        self.assertIn('sandbox', parser.frames[1])
-        get.assert_not_called()
-
-    def test_settings_are_collapsed_except_on_invalid_url(self):
-        page = self.client.get('/split').get_data(as_text=True)
-        self.assertIn('<details>', page)
-        self.assertIn('<summary>Split settings</summary>', page)
-        self.assertLess(page.index('<details>'), page.index('<form '))
-        self.assertLess(page.index('</form>'), page.index('</details>'))
-        self.assertLess(page.index('</details>'), page.index('<main '))
-        invalid = self.client.get('/split', query_string={'lyrion_url': 'invalid'})
-        self.assertIn('<details open>', invalid.get_data(as_text=True))
-
-    def test_custom_url_is_escaped(self):
-        url = 'https://music.example:9000/?q="\'><script>alert(1)</script>'
-        response = self.client.get('/split', query_string={'lyrion_url': url})
-        self.assertEqual(response.status_code, 200)
-        page = response.get_data(as_text=True)
-        self.assertNotIn('<script>alert(1)</script>', page)
-        self.assertIn('&lt;script&gt;', page)
-
-    def test_invalid_urls_do_not_create_frames(self):
-        for url in ['', 'javascript:alert(1)', '//music.example', 'file:///etc/passwd',
-                    'https://user:password@music.example/', 'http://music.example:bad',
-                    'http://music.example:99999', 'http://music.example/ with spaces']:
-            with self.subTest(url=url):
-                response = self.client.get('/split', query_string={'lyrion_url': url})
-                self.assertEqual(response.status_code, 400)
-                self.assertNotIn('<iframe', response.get_data(as_text=True))
-
-    def test_prefixed_harmony_frame_and_form(self):
-        from flask import Flask
-        from app import bp
-        prefixed = Flask(__name__, template_folder=str(Path(__file__).resolve().parents[1] / 'templates'))
-        prefixed.register_blueprint(bp, url_prefix='/harmony')
-        response = prefixed.test_client().get('/harmony/split')
-        page = response.get_data(as_text=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('src="/harmony/"', page)
-        self.assertIn('action="/harmony/split"', page)
 
 
 class TestImageCaching(unittest.TestCase):
