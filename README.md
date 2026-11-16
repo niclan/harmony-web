@@ -86,11 +86,16 @@ sudo systemctl enable --now harmony-web
 sudo systemctl status harmony-web
 ```
 
+To run the service standalone without any front proxy such as nginx,
+apache etc in front edit this:
+- `URL_PREFIX=`
+- `--bind 0.0.0.0:${PORT}`
+
 The supplied unit runs as `www-data` from `/var/lib/harmony-web` and
 listens on `127.0.0.1:5000` with the `/harmony` URL prefix, ready for
-a fronting web proxy such as apache or nginx if you like.  Adjust the
-user/group if your distribution uses a different service account.
-View logs with `journalctl -u harmony-web -f`. See
+a fronting web proxy if you like.  Adjust the user/group if your
+distribution uses a different service account.  View logs with
+`journalctl -u harmony-web -f`. See
 [deployment/README.md](deployment/README.md) for nginx configuration
 and more details.
 
