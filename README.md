@@ -74,11 +74,21 @@ docker-compose up -d
 
 ## Harmony and Lyrion split view
 
-Open `/split` (or `/harmony/split` when deployed with that prefix) to show
-Harmony on top and Lyrion underneath. Enter your Lyrion URL and press Load;
-the default is `http://squeeze.langfeldt.net:9000`. The height slider adjusts
-the two views. Bookmark the resulting URL to keep your chosen server, for example:
+Open `http://<your-harmony-host>:5000/split` to show Harmony on top and
+the Lyrion music player underneath. Behind a reverse proxy with
+`URL_PREFIX=/harmony`, use `/harmony/split` instead.
+
+Click **Split settings** to open the controls:
+
+- Enter your **Lyrion URL** and click **Load**. The default is
+  `http://squeeze.langfeldt.net:9000`.
+- Move the **Harmony height** slider to adjust the space given to each view.
+- Click **Open Lyrion** to open the player in a separate tab.
+
+Settings are collapsed by default to leave more room for the two apps.
+Bookmark the resulting page URL to remember your Lyrion server, for example:
 `/split?lyrion_url=http%3A%2F%2Fsqueeze.langfeldt.net%3A9000`.
+The height adjustment applies to the current page and resets when reloaded.
 
 The browser connects to Lyrion directly. Lyrion must allow embedding, and an
 HTTPS Harmony page requires an HTTPS Lyrion URL to avoid mixed-content blocking.
